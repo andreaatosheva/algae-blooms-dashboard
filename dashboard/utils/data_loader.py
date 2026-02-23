@@ -5,10 +5,34 @@ from typing import Dict, Optional
 import logging
 from config import DATA_PATHS
 import sys
+from huggingface_hub import hf_hub_download, login
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 logger = logging.getLogger(__name__)
+
+HF_REPO_ID = "andreaatosheva/data"
+HF_REPO_TYPE = "dataset"
+
+HF_FILE_MAPPING = {
+    'chl':         'chl/chl_full.nc',
+    'temperature': 'temperature/temperature_full.nc',
+    'nutrients':   'nutrients/nutrients_full.nc',
+    'wind':        'wind/wind_full.nc',
+    'solar':       'solar/solar_full.nc',
+    'rain':        'rain/rain_full.nc'
+}
+
+VAR_TO_PATH = {
+    'chlorophyll':     'chl',
+    'temperature':     'temperature',
+    'nitrate':         'nutrients',
+    'phosphate':       'nutrients',
+    'ammonia':         'nutrients',
+    'wind_speed':      'wind',
+    'solar_radiation': 'solar',
+    'rainfall':        'rain'
+}
 
 def check_data_files():
     """
@@ -23,21 +47,31 @@ def check_data_files():
             logger.warning(f"Data file missing: {var_name} at {file_path}")
     return status
 
+
+@st.cache_data(ttl=3600)
+def download_file(path_key: str) -> Optional[Path]:
+    try:
+        repo_file = HF_FILE_MAPPING.get(path_key)
+        if repo_file is None:
+            logger.error(f"No file mapped for key '{path_key}'")
+            return None
+        
+        local_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename=repo_file,
+            repo_type=HF_REPO_TYPE
+            )
+        return Path(local_path)
+    
+    except Exception as e:
+        logger.error(f"Failed to download '{path_key}': {e}")
+        return None
+
 @st.cache_data(ttl=3600)
 def load_dataset(variable: str) -> Optional[xr.Dataset]:
-    var_mapping_paths = {
-        'chlorophyll': 'chl',
-        'temperature': 'temperature',
-        'nitrate': 'nutrients',
-        'phosphate': 'nutrients',
-        'ammonia': 'nutrients',
-        'wind_speed': 'wind',
-        'solar_radiation': 'solar',
-        'rainfall': 'rain'
-    }
     try:
-        path_var = var_mapping_paths.get(variable, variable)
-        file_path = DATA_PATHS.get(path_var)
+        path_var = VAR_TO_PATH.get(variable, variable)
+        file_path = download_file(path_var)
         if file_path is None or not file_path.exists():
             logger.error(f"Data file for variable '{variable}' not found at path: {file_path}")
             return None
