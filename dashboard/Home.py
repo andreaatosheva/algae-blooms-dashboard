@@ -1,6 +1,7 @@
 import streamlit as st
 import sys
 from pathlib import Path
+import psutil
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -46,6 +47,8 @@ def main():
     
     with st.sidebar:
         st.markdown('---')
+        mem = psutil.virtual_memory()
+        st.caption(f"🧠 Memory: {mem.percent}% ({mem.used / 1024**2:.0f} MB)")
         st.markdown('### 📚 Navigation')
         st.markdown("")
         st.markdown("""

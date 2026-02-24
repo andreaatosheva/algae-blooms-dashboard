@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
+from utils.helper import show_memory_usage
 
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -22,6 +23,7 @@ st.set_page_config(
 
 st.title("🌿 Algae Bloom Detection")
 st.markdown("Identify, analyze, and predict algae bloom events in the Baltic Sea")
+show_memory_usage()
 
 @st.cache_data
 def load_variable_data(var_name):

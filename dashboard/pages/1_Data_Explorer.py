@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
+from utils.helper import show_memory_usage
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,8 +34,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+
+
 st.title("🔍 Data Explorer")
 st.markdown("Explore and visualize the datasets used in the Algae Bloom Dashboard.")
+show_memory_usage()
+
 
 
 

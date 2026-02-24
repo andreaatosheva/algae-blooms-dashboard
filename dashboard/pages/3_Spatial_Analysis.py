@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+from utils.helper import show_memory_usage
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -20,6 +21,7 @@ st.set_page_config(
 
 st.title("🗺️ Spatial Analysis")
 st.markdown("Explore spatial patterns and distributions across the Baltic Sea coastal region")
+show_memory_usage()
 
 @st.cache_data
 def load_variable_data(var_name):
@@ -279,7 +281,7 @@ with tab1:
             showlegend=False
         )
         
-        st.plotly_chart(fig_hotspot, use_container_width=True)
+        st.plotly_chart(fig_hotspot, width='stretch')
         if hotspot_count > 0:
             hotspot_indices = np.where(hotspot_mask & ~np.isnan(data_plot.values))
             hotspot_lats = hotspot_indices[0]
@@ -348,7 +350,7 @@ with tab2:
         showlegend=False
     )
     
-    st.plotly_chart(fig_hist, use_container_width=True)
+    st.plotly_chart(fig_hist, width='stretch')
         
 with tab3:
     st.markdown("### Regional Comparison")
@@ -459,7 +461,7 @@ with col1:
         showlegend=False
     )
     
-    st.plotly_chart(fig_lat, use_container_width=True)
+    st.plotly_chart(fig_lat, width='stretch')
 
 with col2:
     # Longitudinal profile (average across latitudes)

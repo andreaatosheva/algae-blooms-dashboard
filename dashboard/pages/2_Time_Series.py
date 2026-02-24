@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy import stats
+from utils.helper import show_memory_usage
 
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,6 +22,8 @@ st.set_page_config(
 
 st.title("📈 Time Series Analysis")
 st.markdown("Analyze temporal trends, seasonality, and patterns over time")
+
+show_memory_usage()
 
 @st.cache_data
 def load_variable_data(variable_key):

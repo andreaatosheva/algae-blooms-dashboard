@@ -10,6 +10,7 @@ from scipy import stats
 from scipy.stats import pearsonr, spearmanr
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from utils.helper import show_memory_usage
                         
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -26,6 +27,8 @@ st.set_page_config(
 
 st.title("📉 Statistical Analysis")
 st.markdown("Comprehensive statistical analysis and correlations between environmental variables.")
+
+show_memory_usage()
 
 @st.cache_data
 def load_variable_data(var_name):
@@ -344,7 +347,7 @@ elif analysis_type == "Pairwise Correlation Analysis":
                         ]
                     )
                     
-                    st.plotly_chart(fig_scatter, use_container_width=True)
+                    st.plotly_chart(fig_scatter, width='stretch')
                 
                 with col2:
                     y_pred = p(x_data)
@@ -375,7 +378,7 @@ elif analysis_type == "Pairwise Correlation Analysis":
                         template='plotly_white'
                     )
                     
-                    st.plotly_chart(fig_residual, use_container_width=True)
+                    st.plotly_chart(fig_residual, width='stretch')
                 
                 st.markdown("### 📊 Regression Statistics")
                 
