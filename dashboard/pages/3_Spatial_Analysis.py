@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from utils.helper import show_memory_usage
+import gc
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -507,6 +508,9 @@ fig_lat.add_vrect(
     annotation_text="Southern Baltic",
     fillcolor="blue", opacity=0.1
 )
+
+# Clear memory
+gc.collect()
 
 # Footer
 st.markdown("---")

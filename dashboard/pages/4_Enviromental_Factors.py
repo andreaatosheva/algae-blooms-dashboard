@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
 from utils.helper import show_memory_usage
+import gc
 
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -841,6 +842,10 @@ elif analysis_mode == "Nutrient Ratios":
             
             **Why it matters:** Understanding nutrient limitation helps predict which nutrient reductions would be most effective for controlling algal blooms.
             """)
+
+# Clear memory
+gc.collect()
+
 # Footer
 st.markdown("---")
 st.markdown("""

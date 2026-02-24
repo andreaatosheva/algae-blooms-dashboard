@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
 from utils.helper import show_memory_usage
+import gc
 
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -377,7 +378,8 @@ with tab3:
         
         st.plotly_chart(fig_compare, width='stretch')
     
-                
+# Clear memory
+gc.collect()
 # Footer
 st.markdown("---")
 st.markdown("""

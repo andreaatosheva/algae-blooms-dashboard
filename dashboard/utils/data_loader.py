@@ -76,7 +76,11 @@ def load_dataset(variable: str) -> Optional[xr.Dataset]:
             logger.error(f"Data file for variable '{variable}' not found at path: {file_path}")
             return None
         
-        ds = xr.open_dataset(file_path)
+        ds = xr.open_dataset(file_path, chunks={'time': 12})
+        
+        vars_to_keep = [VAR_TO_PATH.get(variable, variable)]
+        ds = ds[vars_to_keep]
+        ds = ds.load()
         logger.info(f"Successfully loaded dataset for variable '{variable}' from {file_path}")
         return ds
     

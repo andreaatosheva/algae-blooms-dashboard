@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy import stats
 from utils.helper import show_memory_usage
+import gc
 
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -708,6 +709,9 @@ with tab2:
         
         st.metric("Mean % Change", f"{np.mean(valid_pct_changes):+.2f}%/month")
         st.metric("Volatility (Std)", f"{np.std(valid_pct_changes):.2f}%")
+
+# Clear memory
+gc.collect()
 
 # Footer
 st.markdown("---")

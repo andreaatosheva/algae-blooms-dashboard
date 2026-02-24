@@ -1,3 +1,4 @@
+import gc
 import streamlit as st
 import sys
 from pathlib import Path
@@ -11,7 +12,9 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from utils.helper import show_memory_usage
-                        
+
+
+
 # Add to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -1126,6 +1129,9 @@ elif analysis_type == "Statistical Tests":
             st.plotly_chart(fig_trend, width='stretch')
             
             st.markdown(f"**Sen's Slope:** {sen_slope:.4f} {test_info['unit']}/month")
+
+# Clear memory
+gc.collect()
 
 # Footer
 st.markdown("---")
