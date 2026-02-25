@@ -695,6 +695,11 @@ elif analysis_mode == "Nutrient Ratios":
                     st.metric(label="Range", value="Single Value")
         
         with col3:
+            text=("Nutrient Status\n"
+                  "Indicates which nutrient is likely limiting phytoplankton growth based on the Redfield Ratio:\n\n"
+                  "🔴 P-Limited (N:P > 20) — Phosphorus is relatively scarce; nitrogen is in excess. Phytoplankton growth is constrained by available phosphorus.\n\n"
+                  "🔵 N-Limited (N:P < 10) — Nitrogen is relatively scarce; growth is constrained by available nitrogen. This is common in many coastal and open ocean systems.\n\n"
+                  "🟢 Balanced (N:P between 10–20) — Nutrients are in a roughly healthy balance, close to the Redfield Ratio, supporting normal phytoplankton growth.")
             if current_np > 20:
                 limitation = "P-Limited"
                 color = "red"
@@ -707,7 +712,8 @@ elif analysis_mode == "Nutrient Ratios":
             
             st.metric(
                 label="Nutrient Status",
-                value=limitation
+                value=limitation,
+                help=text
             )
         
         if ratio_time_agg == "All Time" or (len(np_ratio.shape) > 0 and len(np_ratio) > 1):
@@ -726,10 +732,8 @@ elif analysis_mode == "Nutrient Ratios":
                 y=16,
                 line_dash="dash",
                 line_color="green",
-                line_width=2,
-                annotation_text="Redfield Ratio (16:1)",
-                annotation_position="right"
-            )
+                line_width=2
+                )
             
             fig_np.add_hrect(
                 y0=0, y1=10,
@@ -746,6 +750,28 @@ elif analysis_mode == "Nutrient Ratios":
                 annotation_text="P-Limited",
                 annotation_position="bottom left"
             )
+
+            # Dummy traces for legend
+            fig_np.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='lines',
+                name='Redfield Ratio (16:1)',
+                line=dict(color='green', width=2, dash='dash')
+            ))
+
+            fig_np.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                name='N-Limited (N:P < 10)',
+                marker=dict(color='blue', size=10, symbol='square', opacity=0.3)
+            ))
+
+            fig_np.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                name='P-Limited (N:P > 20)',
+                marker=dict(color='red', size=10, symbol='square', opacity=0.3)
+            ))
             
             fig_np.update_layout(
                 title=f'N:P Ratio Over Time - {time_label}',
@@ -753,7 +779,17 @@ elif analysis_mode == "Nutrient Ratios":
                 yaxis_title='N:P Ratio',
                 height=500,
                 template='plotly_white',
-                hovermode='x unified'
+                hovermode='x unified',
+                showlegend=True,
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=1.02,
+                    bgcolor='rgba(255,255,255,0.8)',
+                    bordercolor='lightgrey',
+                    borderwidth=1
+                )
             )
             
             st.plotly_chart(fig_np, width='stretch')

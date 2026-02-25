@@ -305,6 +305,8 @@ with tab1:
 
 with tab2:
     st.markdown("### Spatial Value Distribution")
+    text = ("This histogram shows how values are spread across all spatial pixels in the selected area at a given point in time. The x-axis represents the variable's value and the y-axis shows how many pixels have that value - tall bars mean many pixels share a similar reading, while a wide spread indicates high spatial variability across the region.")
+    st.info(text)
     
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Histogram(

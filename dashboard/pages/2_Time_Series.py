@@ -135,18 +135,21 @@ if analysis_type == "Trend Analysis":
             trend_per_year = slope * months_per_year
             st.metric(
                 label="Trend per Year",
-                value=f"{trend_per_year:.4f} {var_info['unit']}/year"
+                value=f"{trend_per_year:.4f} {var_info['unit']}/year",
+                help="Average direction and rate of change of the variable over time (positive means increasing, negative means decreasing)"
             )
         with col2:
             st.metric(
                 label="R-squared",
-                value=f"{r_value**2:.4f}"
+                value=f"{r_value**2:.4f}",
+                help="R-sqared measures how well the trend line explains the variation in the data. Values closer to 1 indicate a stronger relationship between time and the variable."
             )
         
         with col3:
             st.metric(
                 label="P-value",
-                value=f"{p_value:.4e}"
+                value=f"{p_value:.4e}",
+                help="The p-value explains the probability that the observed trend could have occurred by random chance. A common threshold for significance is 0.05, meaning if the p-value is below this, we can reject the null hypothesis of no trend."
             )
             
         with col4:
@@ -283,6 +286,15 @@ elif analysis_type == "Seasonal Analysis":
     trend = ts_df['value'].rolling(window=12, center=True).mean().values
     
     residual = ts_data.values - trend - seasonal
+    text = ("**Original**\n"
+            "The raw, unprocessed time series exactly as it was measured. All variability - trends, seasons, and random fluctuations - are combined here.\n\n"
+            "**Trend (12-month average)**\n"
+            "A smoothed version of the data created by averaging each point with its surrounding 12 months. This removes short-term seasonal swings and reveals the underlying long-term direction of change - whether the variable is gradually increasing, decreasing, or staying stable over the years. Note: the first and last 6 months will appear blank because there aren't enough neighboring points to compute the average at the edges.\n\n"
+            "**Seasonal Component**\n"
+            "The repeating, cyclical pattern that occurs at the same time each year. This is calculated by averaging all values for each calendar month across the entire record. For example, if Chlorophyll-a is consistently higher every spring, that pattern is captured here. This component helps you understand the natural annual rhythm of the variable.\n\n"
+            "**Residual**\n"
+            "What's left over after removing both the trend and the seasonal pattern from the original data. Ideally, residuals should look like random scatter with no obvious structure. If patterns still appear here, it suggests there are other drivers or events (e.g. storms, anomalous years) not captured by a simple trend or seasonal cycle.")
+    st.info(text)
     
     fig_decomp = make_subplots(
         rows=4, cols=1,
@@ -406,9 +418,9 @@ elif analysis_type == "Anomaly Detection":
     threshold_std = st.slider(
         "Anomaly Threshold (Standard Deviations)",
         min_value=1.0,
-        max_value=3.0,
+        max_value=5.0,
         value=2.0,
-        step=0.5,
+        step=0.1,
         help="Values beyond this many standard deviations are considered anomalies"
     )
     
