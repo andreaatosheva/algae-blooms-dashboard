@@ -142,7 +142,6 @@ def main():
         - View time series for different variables
         - Select custom date ranges
         - Compare multiple variables
-        - Download filtered data
         """)
     
     with col2:
@@ -154,6 +153,56 @@ def main():
         - Analyze seasonal patterns
         - Detect trends over time
         """)
+    
+    
+    # ── Data Sources ──────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("## 🛰️ Data Sources")
+    st.markdown(
+        "All datasets used in this dashboard are sourced from the "
+        "**Copernicus** Earth observation programme and are freely accessible via the portals below."
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("""
+        <div class="source-card">
+            <strong>🌊 Copernicus Marine Service</strong><br>
+            Provides ocean variables including chlorophyll-a, sea surface
+            temperature, and nutrient concentrations derived from satellite
+            and in-situ observations.<br><br>
+            <a href="https://data.marine.copernicus.eu" target="_blank">
+                🔗 data.marine.copernicus.eu
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("""
+        <div class="source-card">
+            <strong>🌤️ Copernicus Climate Data Store (CDS)</strong><br>
+            Provides atmospheric and climate variables including wind speed and
+            solar radiation from ERA5 and related
+            reanalysis products.<br><br>
+            <a href="https://cds.climate.copernicus.eu" target="_blank">
+                🔗 cds.climate.copernicus.eu
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div class="source-card">
+            <strong>🛰️ NASA GES DISC — IMERG</strong><br>
+            Provides high-resolution precipitation data (0.1°) from the 
+            GPM IMERG Final Run product, combining multi-satellite 
+            microwave estimates with gauge calibration.<br><br>
+            <a href="https://disc.gsfc.nasa.gov/datasets/GPM_3IMERGM_07/summary?keywords=%22IMERG%20final%22" target="_blank">
+                🔗 disc.gsfc.nasa.gov
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
     
     # Footer
     st.markdown("---")

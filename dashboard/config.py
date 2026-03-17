@@ -116,3 +116,13 @@ SEASON_COLORS = {
 APP_TITLE = "Baltic Sea Algae Bloom Dashboard"
 APP_SUBTITLE = "Coastal Water Analysis (2014-2024)"
 PAGE_ICON = "🌊"
+
+BALTIC_REGIONS = {
+    "Bothnian Bay":                {"min_lat": 63.5, "max_lat": 65.9, "min_lon": 20.0, "max_lon": 25.5, "color": "#1f77b4"},
+    "Bothnian Sea":                {"min_lat": 60.0, "max_lat": 63.5, "min_lon": 17.0, "max_lon": 22.5, "color": "#ff7f0e"},
+    "Gulf of Finland":             {"min_lat": 59.0, "max_lat": 60.7, "min_lon": 22.5, "max_lon": 30.3, "color": "#d62728"},
+    "Gulf of Riga":                {"min_lat": 57.0, "max_lat": 59.0, "min_lon": 22.5, "max_lon": 24.5, "color": "#9467bd"},
+    "Baltic Proper":               {"min_lat": 55.0, "max_lat": 60.0, "min_lon": 16.0, "max_lon": 22.5, "color": "#8c564b"},
+    "Arkona & Bornholm Basin":     {"min_lat": 53.7, "max_lat": 56.14, "min_lon": 12.5, "max_lon": 18.5, "color": "#e377c2"},
+    "Bay of Gdańsk":               {"min_lat": 54.0, "max_lat": 55.0, "min_lon": 18.5, "max_lon": 20.5, "color": "#bcbd22"},
+}
