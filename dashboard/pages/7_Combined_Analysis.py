@@ -6,7 +6,6 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from utils.helper import show_memory_usage, make_bbox_trace
-from streamlit_plotly_events import plotly_events
 from plotly.subplots import make_subplots
 import gc
 
