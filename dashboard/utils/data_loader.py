@@ -6,6 +6,7 @@ import logging
 from config import DATA_PATHS
 import sys
 from huggingface_hub import hf_hub_download, login
+from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
@@ -86,15 +87,34 @@ def load_dataset(variable: str) -> Optional[xr.Dataset]:
         return None
     
 
-@st.cache_data(ttl=3600)
+@st.cache_resource
 def load_all_datasets() -> Dict[str, Optional[xr.Dataset]]:
     datasets = {}
-    
-    with st.spinner("Loading datasets..."):
-        for var_name in DATA_PATHS.keys():
-            ds = load_dataset(var_name)
-            if ds is not None:
-                datasets[var_name] = ds
+    vars_list = list(DATA_PATHS.keys())
+    progress = st.progress(0, text="Loading datasets...")
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        # Submit all jobs and keep a mapping of future -> var_name
+        futures = {executor.submit(load_dataset, var): var for var in vars_list}
+        completed = 0
+
+        for future in as_completed(futures):
+            var_name = futures[future]
+            try:
+                ds = future.result()
+                if ds is not None:
+                    datasets[var_name] = ds
+            except Exception as e:
+                logger.error(f"Failed to load {var_name}: {e}")
+            finally:
+                # Progress update happens on main thread as futures complete
+                completed += 1
+                progress.progress(
+                    completed / len(vars_list),
+                    text=f"Loaded {var_name} ({completed}/{len(vars_list)})"
+                )
+
+    progress.empty()
     return datasets
 
 @st.cache_data(ttl=3600)

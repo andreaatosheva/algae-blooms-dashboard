@@ -159,8 +159,9 @@ def main():
     st.markdown("---")
     st.markdown("## 🛰️ Data Sources")
     st.markdown(
-        "All datasets used in this dashboard are sourced from the "
-        "**Copernicus** Earth observation programme and are freely accessible via the portals below."
+        "The datasets used in this dashboard are sourced from the "
+        "**Copernicus** Earth observation programme and **NASA GES DISC**, "
+        "and are freely accessible via the portals below."
     )
 
     col1, col2, col3 = st.columns(3)

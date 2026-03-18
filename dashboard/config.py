@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Dict, Optional
 # Paths
 BASE_DIR = Path(__file__).parent.parent.resolve()
-print(f"Base directory: {BASE_DIR}")
 DATA_DIR = BASE_DIR / 'data'
 PLOTS_DIR = BASE_DIR / 'exploration_plots'
 
@@ -15,11 +14,6 @@ DATA_PATHS = {
     'rain': DATA_DIR / 'rain' / 'processed_data' / 'rain_full_combined.nc',
     'nutrients': DATA_DIR / 'nutrients' / 'processed_data' / 'nutrients_full_combined.nc'
 }
-
-# Print for debugging (remove later)
-print("\nDEBUG - Checking file existence:")
-for var, path in DATA_PATHS.items():
-    print(f"  {var}: {path.exists()} - {path}")
 
 # Variable metadata
 VARIABLE_INFO = {
