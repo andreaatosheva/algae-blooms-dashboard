@@ -1,11 +1,16 @@
 import streamlit as st
 import psutil
 import plotly.graph_objects as go
+import pandas as pd
+from utils.data_loader import load_variable_data
+from config import SEASONS, VARIABLE_INFO
 
 def show_memory_usage():
     mem = psutil.virtual_memory()
     with st.sidebar:
         st.caption(f"🧠 Memory: {mem.percent}% ({mem.used / 1024**2:.0f} MB)")
+        
+
         
         
 def make_bbox_trace(name, region):
@@ -38,3 +43,59 @@ def make_bbox_trace(name, region):
             "<extra></extra>"
         )
     )
+
+
+@st.cache_data
+def get_point_timeseries(var_name, lat, lon, time_filter):
+    """
+    Extract time series for a single lat/lon point, optionally filtered to a time period.
+    """
+    
+    data = load_variable_data(var_name)
+    if data is None:
+        return None, None
+
+    
+    try:
+        ts = data.sel(latitude=lat, longitude=lon, method='nearest')
+        df_all = pd.DataFrame({
+            'Date': ts.time.values,
+            var_name: ts.values
+        })
+        
+        mode = time_filter.get('mode') if time_filter else 'Annual Average'
+        
+        if mode == 'Single Month':
+            year = time_filter.get('year')
+            month = time_filter.get('month')
+            df_filtered = df_all[
+                (pd.to_datetime(df_all['Date']).dt.year == year) &
+                (pd.to_datetime(df_all['Date']).dt.month == month)
+            ]
+            
+        elif mode == 'Seasonal Average':
+            months = time_filter.get('months')
+            year = time_filter.get('year')
+            mask = pd.to_datetime(df_all['Date']).dt.month.isin(months)
+            if year is not None:
+                mask &= (pd.to_datetime(df_all['Date']).dt.year == year)
+            df_filtered = df_all[mask]
+            
+        elif mode == 'Annual Average':
+            year = time_filter.get('year')
+            df_filtered = df_all[pd.to_datetime(df_all['Date']).dt.year == year]
+            
+        elif mode == 'All Time':
+            df_filtered = df_all.copy()
+            
+        return df_all, df_filtered
+    
+    
+    except Exception as e:
+        st.error(f"Error extracting time series for {var_name} at ({lat}, {lon}): {e}")
+        return None, None
+            
+            
+        
+    
+    

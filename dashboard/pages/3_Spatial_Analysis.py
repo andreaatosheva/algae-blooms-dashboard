@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from utils.helper import show_memory_usage, make_bbox_trace
+from utils.helper import show_memory_usage, make_bbox_trace, get_point_timeseries, load_variable_data
 from streamlit_plotly_events import plotly_events
 import gc
 
@@ -25,34 +25,8 @@ st.title("🗺️ Spatial Analysis")
 st.markdown("Explore spatial patterns and distributions across the Baltic Sea coastal region")
 show_memory_usage()
 
-@st.cache_data
-def load_variable_data(var_name):
-    """Load data for selected variable"""
-    if var_name in ['nitrate', 'phosphate', 'ammonia']:
-        ds = load_dataset('nutrients')
-    else:
-        ds = load_dataset(var_name)
-    
-    if ds is None:
-        return None
-    
-    return get_variable_data(ds, var_name)
 
-@st.cache_data
-def get_point_timeseries(var_name, lat, lon):
-    """Extract full time series for a single lat/lon point for a given variable."""
-    data = load_variable_data(var_name)
-    if data is None:
-        return None
-    try:
-        ts = data.sel(latitude=lat, longitude=lon, method='nearest')
-        return pd.DataFrame({
-            'Date': ts.time.values,
-            var_name: ts.values
-        })
-    except Exception as e:
-        return None
-    
+
 
 col1, col2 = st.columns(2, gap="xxsmall", border=True)
 with col1:
@@ -147,6 +121,32 @@ with col2:
         data_plot = data.mean('time')
         time_label = "All Time Average (2014-2024)"
         
+if time_agg == "Single Month":
+    time_filter = {
+        'mode': 'Single Month',
+        'year': selected_year,
+        'month': selected_month
+    }
+
+elif time_agg == "Seasonal Average":
+    time_filter = {
+        'mode': 'Seasonal Average',
+        'months': season_months,
+        'year': specific_year if year_option == "Specific Year" else None
+    }
+    print(season_months)
+
+elif time_agg == "Annual Average":
+    time_filter = {
+        'mode': 'Annual Average',
+        'year': selected_year
+    }
+
+else:
+        time_filter = {
+            'mode': 'All Time',
+        }
+        
 st.markdown("---")
 col1, col2 = st.columns([3, 1], gap="xxsmall", border=True)
 with col1: 
@@ -214,35 +214,59 @@ if clicked_lat is not None and clicked_lon is not None:
     st.markdown("### 📊 All-Variable Summary")
     st.caption("Values at the nearest grid point across all variables, for all available time steps.")
     
-    summary_rows = []
+    all_time_rows = []
+    filetered_rows = []
+    
     for var_name, info in VARIABLE_INFO.items():
-        ts_df = get_point_timeseries(var_name, clicked_lat, clicked_lon)
-        if ts_df is not None and not ts_df.empty:
-            vals = ts_df[var_name].dropna()
-            if len(vals) > 0:
-                summary_rows.append({
-                    'Variable': info['name'],
-                    'Unit': info['unit'],
-                    'Mean': f"{vals.mean():.2f} {info['unit']}",
-                    'Max': f"{vals.max():.2f} {info['unit']}",
-                    'Min': f"{vals.min():.2f} {info['unit']}",
-                    'Std Dev': f"{vals.std():.2f} {info['unit']}",
-                    'N Months': f"{len(vals)}"
-                })
-    if summary_rows:
-        summary_df = pd.DataFrame(summary_rows)
-        st.dataframe(summary_df, hide_index=True, width='stretch')
+        df_all, df_filtered = get_point_timeseries(var_name, clicked_lat, clicked_lon, time_filter)
         
-        csv = summary_df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Point Summary",
-            data=csv,
-            file_name=f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E.csv",
-            mime="text/csv",
-            key="download_summary"
-        )
-    else:
-        st.info("No valid data available at this location for any variable.")
+        for df, rows in [(df_all, all_time_rows), (df_filtered, filetered_rows)]:
+            if df is not None and not df.empty:
+                vals = df[var_name].dropna()
+                if len(vals) > 0:
+                    rows.append({
+                        'Variable': info['name'],
+                        'Unit': info['unit'],
+                        'Mean': f"{vals.mean():.2f} {info['unit']}",
+                        'Max': f"{vals.max():.2f} {info['unit']}",
+                        'Min': f"{vals.min():.2f} {info['unit']}",
+                        'Std Dev': f"{vals.std():.2f} {info['unit']}",
+                        'N Months': f"{len(vals)}"
+                    })
+    
+    tab_filtered, tab_all = st.tabs([f"📅 {time_label}", "📅 All Time"])
+    
+    with tab_filtered:
+        st.caption(f"Stats for the selected period: **{time_label}**")
+        if filetered_rows:
+            df_filtered_summary = pd.DataFrame(filetered_rows)
+            st.dataframe(df_filtered_summary, hide_index=True, width='stretch')
+            st.download_button(
+                label="📥 Download Filtered Summary",
+                data=df_filtered_summary.to_csv(index=False),
+                file_name = f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E_{time_label.replace(' ', '_')}.csv",
+                mime="text/csv",
+                key="download_filtered_summary")
+        else:
+            st.info(f"No valid data available at this location for the selected time period ({time_label}).")
+            
+    with tab_all:
+        st.caption("Stats for all available time steps (2014-2024)")
+                
+        if all_time_rows:
+            summary_df = pd.DataFrame(all_time_rows)
+            st.dataframe(summary_df, hide_index=True, width='stretch')
+            
+            csv = summary_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download All-Time Point Summary",
+                data=csv,
+                file_name=f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E_All_Time.csv",
+                mime="text/csv",
+                key="download_summary"
+            )
+        else:
+            st.info("No valid data available at this location for any variable.")
 else:
     st.info("No data point selected yet")
 st.markdown("---")
