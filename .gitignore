@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Data files 
+data/
+raw/
+exploration_plots/
+papers/
+
+*.ipynb
+*.png
+*.pptx
+subset_GPM_3IMERGM_07_20260313_110606_.txt
