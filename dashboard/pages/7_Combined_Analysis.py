@@ -34,662 +34,676 @@ no3_data = load_variable_data('nitrate')
 po4_data = load_variable_data('phosphate')
 rain_data = load_variable_data('rainfall')
 
-tab1, tab2 = st.tabs(["Map Analysis", "Bloom Detection Analysis"])
 
-with tab1:
+col1, col2 = st.columns([1.5, 2.5], gap="small", border=False)
 
-    col1, col2 = st.columns([1.5, 2.5], gap="small", border=False)
-
-    with col1:
-        map_area_key = st.selectbox(
-            "**Map Area**",
-            options=["Full Baltic Region"] + list(BALTIC_REGIONS.keys()),
-            index=0
-        )
-        
-        map_style_key = st.selectbox(
-                "**Map Style**",
-                options=["Regular Heatmap", "Hotspot Map"],
-                index=0
-            )
-        
-        available_vars = list(VARIABLE_INFO.keys())
-        
-        selected_var = st.selectbox(
-            "**Select Variable**",
-            options=available_vars,
-            format_func=lambda x: VARIABLE_INFO[x]['name'],
-            index=0
-        )
-        var_info = VARIABLE_INFO[selected_var]
-        
-        data = load_variable_data(selected_var)
-
-        if data is None:
-            st.error(f"Failed to load {var_info['name']} data.")
-            st.stop()
-        
-        time_agg = st.selectbox(
-            "**Select Time Period**",
-            options=["Single Month", "Seasonal Average", "Annual Average", "All Time Average"],
-            index=0
-        )
-
-        if time_agg == "Single Month":
-            available_years = sorted(np.unique(data.time.dt.year.values))
-            selected_year = st.selectbox("**Select Year**", options=available_years, index=len(available_years)-1)
-            
-            months = ['January', 'February', 'March', 'April', 'May', 'June',
-                    'July', 'August', 'September', 'October', 'November', 'December']
-            selected_month = st.selectbox("**Select Month**", options=range(1, 13), 
-                                        format_func=lambda x: months[x-1],
-                                        index=6)
-            date_str = f"{selected_year}-{selected_month:02d}"
-            
-            try:
-                data_plot = data.sel(time=date_str, method='nearest')
-                time_label = f"{months[selected_month-1]} {selected_year}"
-            except:
-                st.error(f"No data available for {months[selected_month-1]} {selected_year}")
-                st.stop()
-                
-        elif time_agg == "Seasonal Average":
-            season = st.selectbox(
-                "**Select Season**",
-                options=["Winter (DJF)", "Spring (MAM)", "Summer (JJA)", "Autumn (SON)"],
-                index=2 
-            )
-            year_option = st.radio("Years", options=["All Years (2014-2024)", "Specific Year"])
-            season_months = {
-            'Winter (DJF)': [12, 1, 2],
-            'Spring (MAM)': [3, 4, 5],
-            'Summer (JJA)': [6, 7, 8],
-            'Autumn (SON)': [9, 10, 11]
-            }[season]
-            
-            if year_option == "All Years (2014-2024)":
-                season_data = data.where(data.time.dt.month.isin(season_months), drop=True)
-                data_plot = season_data.mean('time')
-                time_label = f"{season} Average (2014-2024)"
-            else:
-                available_vars = sorted(np.unique(data.time.dt.year.values))
-                specific_year = st.selectbox("**Select Year**", options=available_vars, index=len(available_vars)-1)
-                
-                season_data = data.where(
-                    (data.time.dt.year == specific_year) & (data.time.dt.month.isin(season_months)),
-                    drop=True
-                )
-                data_plot = season_data.mean('time')
-                time_label = f"{season} {specific_year}"
-                
-        elif time_agg == "Annual Average":
-            available_vars = sorted(np.unique(data.time.dt.year.values))
-            selected_year = st.selectbox("**Select Year**", options=available_vars, index=len(available_vars)-1)
-            
-            year_data = data.sel(time=str(selected_year))
-            data_plot = year_data.mean('time')
-            time_label = f"Annual Average {selected_year}"
-            
-        else:
-            data_plot = data.mean('time')
-            time_label = "All Time Average (2014-2024)"
-        
-        if map_area_key != "Full Baltic Region":
-            bounds = BALTIC_REGIONS[map_area_key]
-            def regional_slice(data, bounds):
-                if data is None:
-                    return None
-                return data.sel(
-                    latitude=slice(bounds['min_lat'], bounds['max_lat']),
-                    longitude=slice(bounds['min_lon'], bounds['max_lon'])
-                )
-            chl_data_r = regional_slice(chl_data, bounds)
-            temp_data_r = regional_slice(temp_data, bounds)
-            wind_data_r = regional_slice(wind_data, bounds)
-            solar_data_r = regional_slice(solar_data, bounds)
-            no3_data_r = regional_slice(no3_data, bounds)
-            po4_data_r = regional_slice(po4_data, bounds)
-            rain_data_r = regional_slice(rain_data, bounds)
-        
-        else:
-            chl_data_r = chl_data
-            temp_data_r = temp_data
-            wind_data_r = wind_data
-            solar_data_r = solar_data
-            no3_data_r = no3_data
-            po4_data_r = po4_data
-            rain_data_r = rain_data
-
-            
-        if time_agg == "Single Month":
-            time_filter = {
-                'mode': 'Single Month',
-                'year': selected_year,
-                'month': selected_month
-            }
-
-        elif time_agg == "Seasonal Average":
-            time_filter = {
-                'mode': 'Seasonal Average',
-                'months': season_months,
-                'year': specific_year if year_option == "Specific Year" else None
-            }
-            print(season_months)
-
-        elif time_agg == "Annual Average":
-            time_filter = {
-                'mode': 'Annual Average',
-                'year': selected_year
-            }
-
-        else:
-                time_filter = {
-                    'mode': 'All Time',
-                }
-        data_plot = regional_slice(data_plot, BALTIC_REGIONS[map_area_key]) if map_area_key != "Full Baltic Region" else data_plot
-        valid_spatial = data_plot.values[~np.isnan(data_plot.values)]
-        if map_style_key == "Hotspot Map":
-            threshold_pct = st.slider(
-            "Hotspot Threshold (Percentile)",
-            min_value=50,
-            max_value=99,
-            value=85,
-            step=5,
-            help="Values above this percentile will be highlighted as hotspots. Higher percentiles = more exclusive hotspots."
-            )
-        
-            threshold_value = np.nanpercentile(data_plot.values, threshold_pct)
-            
-            st.info(f"**Hotspot threshold: {threshold_value:.2f} {var_info['unit']}** (≥{threshold_pct}th percentile)")
-            
-            hotspot_mask = data_plot.values >= threshold_value
-            hotspot_count = np.sum(hotspot_mask & ~np.isnan(data_plot.values))
-            total_valid_pixels = np.sum(~np.isnan(data_plot.values))
-            hotspot_percentage = (hotspot_count / total_valid_pixels) * 100 if total_valid_pixels > 0 else 0
-            
-            if hotspot_count > 0:
-                hotspot_values = data_plot.values[hotspot_mask & ~np.isnan(data_plot.values)]
-        
-            
-
-    with col2:
-        if map_style_key == "Regular Heatmap":
-            fig_map = create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='heatmap')
-            if fig_map is not None:
-                st.plotly_chart(fig_map, width="content", key="main_map")
-        
-        else:
-            fig_hotspot = go.Figure()
-            
-            fig_hotspot.add_trace(go.Heatmap(
-                x=data_plot.longitude.values,
-                y=data_plot.latitude.values,
-                z=data_plot.values,
-                colorscale='Greys',
-                opacity=0.3,
-                showscale=False,
-                hoverinfo='skip',
-                name='Background'
-            ))
-            
-            hotspot_data = np.where(
-                (data_plot.values >= threshold_value) & ~np.isnan(data_plot.values),
-                data_plot.values,
-                np.nan
-            )
-            
-            fig_hotspot.add_trace(go.Heatmap(
-                x=data_plot.longitude.values,
-                y=data_plot.latitude.values,
-                z=hotspot_data,
-                colorscale=[
-                    [0, '#fee5d9'],
-                    [0.33, '#fcae91'],
-                    [0.66, '#fb6a4a'],
-                    [1, '#cb181d']
-                ],
-                colorbar=dict(
-                title=dict(
-                    text=f"{var_info['unit']}",
-                    side='right' 
-                )
-            ),
-                hovertemplate='<b>Lat</b>: %{y:.2f}°N<br>' +
-                            '<b>Lon</b>: %{x:.2f}°E<br>' +
-                            f'<b>{var_info["name"]}</b>: %{{z:.2f}} {var_info["unit"]}<br>' +
-                            '<extra></extra>',
-                name='Hotspots'
-            ))
-            
-            fig_hotspot.update_layout(
-                title=f'Hotspot Locations (≥{threshold_pct}th percentile)',
-                xaxis_title='Longitude (°E)',
-                yaxis_title='Latitude (°N)',
-                height=550,
-                template='plotly_white',
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig_hotspot, width='stretch')
-            if hotspot_count > 0:
-                hotspot_indices = np.where(hotspot_mask & ~np.isnan(data_plot.values))
-                hotspot_lats = hotspot_indices[0]
-                hotspot_lons = hotspot_indices[1]
-                
-                hotspot_lat_values = data_plot.latitude.values[hotspot_lats]
-                hotspot_lon_values = data_plot.longitude.values[hotspot_lons]
-                
-                center_lat = hotspot_lat_values.mean()
-                center_lon = hotspot_lon_values.mean()
-                lat_range = np.ptp(hotspot_lat_values)  
-                lon_range = np.ptp(hotspot_lon_values)  
-                
-                if lat_range < 2 and lon_range < 2:
-                    st.success("🎯 Hotspots are **highly concentrated** in one region")
-                elif lat_range < 5 and lon_range < 5:
-                    st.info("📍 Hotspots are **moderately dispersed**")
-                else:
-                    st.warning("🌍 Hotspots are **widely scattered** across the region")
-    valid_spatial = data_plot.values[~np.isnan(data_plot.values)]
-    colAAA, colBBB, colCCC, colDDD = st.columns(4)
-    with colAAA:
-        st.metric("Mean", f"{np.mean(valid_spatial):.2f} {var_info['unit']}")
-    with colBBB:
-        st.metric("Max", f"{np.max(valid_spatial):.2f} {var_info['unit']}")
-    with colCCC:
-        st.metric("Min", f"{np.min(valid_spatial):.2f} {var_info['unit']}")
-    with colDDD:
-        st.metric("Std Dev", f"{np.std(valid_spatial):.2f} {var_info['unit']}")
-                    
-    tabA, tabB, tabC, tabD = st.tabs(["Point Inspector", "Regional Comparison", "Distribution of Parameter Values", " Spatial Gradients"])
-    with tabA:
-        st.markdown("#### Point Inspector")
-        st.caption("Choose any point on the main map and enter it's coordinates to load historical data for that location.")
-        lats = data_plot.latitude.values
-        lons = data_plot.longitude.values
-
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col1:
-            input_lat = st.number_input(
-                "Latitude (°N)",
-                min_value=float(lats.min()),
-                max_value=float(lats.max()),
-                value = float(lats.mean()),
-                step = 0.01,
-                format="%.2f"
-            )
-
-        with col2:
-            input_lon = st.number_input(
-                "Longitude (°E)",
-                min_value=float(lons.min()),
-                max_value=float(lons.max()),
-                value = float(lons.mean()),
-                step = 0.01,
-                format="%.2f"
-            )
-            
-        with col3:
-            st.markdown("<br>", unsafe_allow_html=True)  # vertical alignment
-            inspect = st.button("🔍 Inspect", width="stretch")
-
-        if inspect:
-            st.session_state["clicked_lat"] = input_lat
-            st.session_state["clicked_lon"] = input_lon
-            
-        clicked_lat = st.session_state.get("clicked_lat", None)
-        clicked_lon = st.session_state.get("clicked_lon", None)
-
-        if clicked_lat is not None and clicked_lon is not None:
-            st.markdown(f"#### Time Series at ({clicked_lat:.2f}°N, {clicked_lon:.2f}°E)")
-            st.caption("Values at the nearest grid point across all variables, for all available time steps.")
-            
-            all_time_rows = []
-            filetered_rows = []
-            
-            for var_name, info in VARIABLE_INFO.items():
-                df_all, df_filtered = get_point_timeseries(var_name, clicked_lat, clicked_lon, time_filter)
-                
-                for df, rows in [(df_all, all_time_rows), (df_filtered, filetered_rows)]:
-                    if df is not None and not df.empty:
-                        vals = df[var_name].dropna()
-                        if len(vals) > 0:
-                            rows.append({
-                                'Variable': info['name'],
-                                'Unit': info['unit'],
-                                'Mean': f"{vals.mean():.2f} {info['unit']}",
-                                'Max': f"{vals.max():.2f} {info['unit']}",
-                                'Min': f"{vals.min():.2f} {info['unit']}",
-                                'Std Dev': f"{vals.std():.2f} {info['unit']}",
-                                'N Months': f"{len(vals)}"
-                            })
-            
-            tab_filtered, tab_all = st.tabs([f"📅 {time_label}", "📅 All Time"])
-            
-            with tab_filtered:
-                st.caption(f"Stats for the selected period: **{time_label}**")
-                if filetered_rows:
-                    df_filtered_summary = pd.DataFrame(filetered_rows)
-                    st.dataframe(df_filtered_summary, hide_index=True, width='stretch')
-                    st.download_button(
-                        label="📥 Download Filtered Summary",
-                        data=df_filtered_summary.to_csv(index=False),
-                        file_name = f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E_{time_label.replace(' ', '_')}.csv",
-                        mime="text/csv",
-                        key="download_filtered_summary")
-                else:
-                    st.info(f"No valid data available at this location for the selected time period ({time_label}).")
-                    
-            with tab_all:
-                st.caption("Stats for all available time steps (2014-2024)")
-                        
-                if all_time_rows:
-                    summary_df = pd.DataFrame(all_time_rows)
-                    st.dataframe(summary_df, hide_index=True, width='stretch')
-                    
-                    csv = summary_df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download All-Time Point Summary",
-                        data=csv,
-                        file_name=f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E_All_Time.csv",
-                        mime="text/csv",
-                        key="download_summary"
-                    )
-                else:
-                    st.info("No valid data available at this location for any variable.")
-        else:
-            st.info("No data point selected yet")
-
-    with tabB:
-
-        regional_means = []
-
-        for region_name, bounds in BALTIC_REGIONS.items():
-            try:
-                region_data = data_plot.sel(
-                    latitude=slice(bounds['min_lat'], bounds['max_lat']),
-                    longitude=slice(bounds['min_lon'], bounds['max_lon'])
-                )
-                mean_val = float(region_data.mean())
-                max_val  = float(region_data.max())
-                min_val  = float(region_data.min())
-
-                regional_means.append({
-                    'Region': region_name,
-                    'Mean':   mean_val,
-                    'Max':    max_val,
-                    'Min':    min_val,
-                    'Range':  max_val - min_val
-                })
-            except:
-                continue
-
-        if regional_means:
-            df_regions = pd.DataFrame(regional_means)
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                fig_regions = go.Figure()
-
-                for _, row in df_regions.iterrows():
-                    region_color = BALTIC_REGIONS[row['Region']]['color']
-                    fig_regions.add_trace(go.Bar(
-                        x=[row['Region']],
-                        y=[row['Mean']],
-                        marker_color=region_color,
-                        marker_line_color='black',
-                        marker_line_width=1.5,
-                        error_y=dict(
-                            type='data',
-                            array=[row['Range'] / 2],
-                            visible=True
-                        ),
-                        hovertemplate='<b>%{x}</b><br>' +
-                                    f'Mean: %{{y:.2f}} {var_info["unit"]}<br>' +
-                                    f'Max: {row["Max"]:.2f} {var_info["unit"]}<br>' +
-                                    f'Min: {row["Min"]:.2f} {var_info["unit"]}<br>' +
-                                    '<extra></extra>'
-                    ))
-
-                fig_regions.update_layout(
-                    title=f'Regional {var_info["name"]} Comparison',
-                    xaxis_title='Region',
-                    yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',
-                    height=400,
-                    template='plotly_white',
-                    showlegend=False,
-                    xaxis_tickangle=-25
-                )
-
-                st.plotly_chart(fig_regions, width='stretch')
-
-            with col2:
-                fig = go.Figure()
-
-                for name, region in BALTIC_REGIONS.items():
-                    fig.add_trace(make_bbox_trace(name, region))
-
-                fig.update_layout(
-                    geo=dict(
-                        projection_type='mercator',
-                        showland=True,
-                        landcolor='rgb(230, 230, 220)',
-                        showocean=True,
-                        oceancolor='rgb(210, 230, 245)',
-                        showcoastlines=True,
-                        coastlinecolor='rgb(100, 100, 100)',
-                        coastlinewidth=1,
-                        showlakes=True,
-                        lakecolor='rgb(210, 230, 245)',
-                        lonaxis=dict(range=[9, 32]),
-                        lataxis=dict(range=[53, 67]),
-                    ),
-                    height=400,
-                    margin=dict(l=0, r=0, t=0, b=0),
-                    legend=dict(
-                        title="Regions",
-                        bgcolor="rgba(255,255,255,0.8)",
-                        bordercolor="lightgrey",
-                        borderwidth=1
-                    )
-                )
-
-                st.plotly_chart(fig, width='stretch')
-            st.markdown("**Regional Statistics**")
-
-            df_display = df_regions.copy()
-            for col in ['Mean', 'Max', 'Min', 'Range']:
-                df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}")
-
-            st.dataframe(df_display, hide_index=True, width='stretch', height=280)
-        
-    with tabC:
-        text = ("This histogram shows how values are spread across all spatial pixels in the selected area at a given point in time. The x-axis represents the variable's value and the y-axis shows how many pixels have that value - tall bars mean many pixels share a similar reading, while a wide spread indicates high spatial variability across the region.")
-        st.markdown("#### Distribution of Parameter Values", help=text)
+with col1:
+    map_area_key = st.selectbox(
+        "**Map Area**",
+        options=["Full Baltic Region"] + list(BALTIC_REGIONS.keys()),
+        index=0
+    )
     
-        fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(
-            x=valid_spatial,
-            nbinsx=50,
-            marker_color=var_info['color'],
-            marker_line_color='black',
-            marker_line_width=0.5,
-            opacity=0.7,
-            name='Distribution'
+    map_style_key = st.selectbox(
+            "**Map Style**",
+            options=["Regular Heatmap", "Hotspot Map"],
+            index=0
+        )
+    
+    available_vars = list(VARIABLE_INFO.keys())
+    
+    selected_var = st.selectbox(
+        "**Select Variable**",
+        options=available_vars,
+        format_func=lambda x: VARIABLE_INFO[x]['name'],
+        index=0
+    )
+    var_info = VARIABLE_INFO[selected_var]
+    
+    data = load_variable_data(selected_var)
+
+    if data is None:
+        st.error(f"Failed to load {var_info['name']} data.")
+        st.stop()
+    
+    time_agg = st.selectbox(
+        "**Select Time Period**",
+        options=["Single Month", "Seasonal Average", "Annual Average", "All Time Average"],
+        index=0
+    )
+
+    if time_agg == "Single Month":
+        available_years = sorted(np.unique(data.time.dt.year.values))
+        selected_year = st.selectbox("**Select Year**", options=available_years, index=len(available_years)-1)
+        
+        months = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December']
+        selected_month = st.selectbox("**Select Month**", options=range(1, 13), 
+                                    format_func=lambda x: months[x-1],
+                                    index=6)
+        date_str = f"{selected_year}-{selected_month:02d}"
+        
+        try:
+            data_plot = data.sel(time=date_str, method='nearest')
+            time_label = f"{months[selected_month-1]} {selected_year}"
+        except:
+            st.error(f"No data available for {months[selected_month-1]} {selected_year}")
+            st.stop()
+            
+    elif time_agg == "Seasonal Average":
+        season = st.selectbox(
+            "**Select Season**",
+            options=["Winter (DJF)", "Spring (MAM)", "Summer (JJA)", "Autumn (SON)"],
+            index=2 
+        )
+        year_option = st.radio("Years", options=["All Years (2014-2024)", "Specific Year"])
+        season_months = {
+        'Winter (DJF)': [12, 1, 2],
+        'Spring (MAM)': [3, 4, 5],
+        'Summer (JJA)': [6, 7, 8],
+        'Autumn (SON)': [9, 10, 11]
+        }[season]
+        
+        if year_option == "All Years (2014-2024)":
+            season_data = data.where(data.time.dt.month.isin(season_months), drop=True)
+            data_plot = season_data.mean('time')
+            time_label = f"{season} Average (2014-2024)"
+        else:
+            available_vars = sorted(np.unique(data.time.dt.year.values))
+            specific_year = st.selectbox("**Select Year**", options=available_vars, index=len(available_vars)-1)
+            
+            season_data = data.where(
+                (data.time.dt.year == specific_year) & (data.time.dt.month.isin(season_months)),
+                drop=True
+            )
+            data_plot = season_data.mean('time')
+            time_label = f"{season} {specific_year}"
+            
+    elif time_agg == "Annual Average":
+        available_vars = sorted(np.unique(data.time.dt.year.values))
+        selected_year = st.selectbox("**Select Year**", options=available_vars, index=len(available_vars)-1)
+        
+        year_data = data.sel(time=str(selected_year))
+        data_plot = year_data.mean('time')
+        time_label = f"Annual Average {selected_year}"
+        
+    else:
+        data_plot = data.mean('time')
+        time_label = "All Time Average (2014-2024)"
+    
+    if map_area_key != "Full Baltic Region":
+        bounds = BALTIC_REGIONS[map_area_key]
+        def regional_slice(data, bounds):
+            if data is None:
+                return None
+            return data.sel(
+                latitude=slice(bounds['min_lat'], bounds['max_lat']),
+                longitude=slice(bounds['min_lon'], bounds['max_lon'])
+            )
+        chl_data_r = regional_slice(chl_data, bounds)
+        temp_data_r = regional_slice(temp_data, bounds)
+        wind_data_r = regional_slice(wind_data, bounds)
+        solar_data_r = regional_slice(solar_data, bounds)
+        no3_data_r = regional_slice(no3_data, bounds)
+        po4_data_r = regional_slice(po4_data, bounds)
+        rain_data_r = regional_slice(rain_data, bounds)
+    
+    else:
+        chl_data_r = chl_data
+        temp_data_r = temp_data
+        wind_data_r = wind_data
+        solar_data_r = solar_data
+        no3_data_r = no3_data
+        po4_data_r = po4_data
+        rain_data_r = rain_data
+
+        
+    if time_agg == "Single Month":
+        time_filter = {
+            'mode': 'Single Month',
+            'year': selected_year,
+            'month': selected_month
+        }
+
+    elif time_agg == "Seasonal Average":
+        time_filter = {
+            'mode': 'Seasonal Average',
+            'months': season_months,
+            'year': specific_year if year_option == "Specific Year" else None
+        }
+        print(season_months)
+
+    elif time_agg == "Annual Average":
+        time_filter = {
+            'mode': 'Annual Average',
+            'year': selected_year
+        }
+
+    else:
+            time_filter = {
+                'mode': 'All Time',
+            }
+    data_plot = regional_slice(data_plot, BALTIC_REGIONS[map_area_key]) if map_area_key != "Full Baltic Region" else data_plot
+    valid_spatial = data_plot.values[~np.isnan(data_plot.values)]
+    
+    
+    if map_style_key == "Hotspot Map":
+        threshold_pct = st.slider(
+        "Hotspot Threshold (Percentile)",
+        min_value=50,
+        max_value=99,
+        value=85,
+        step=5,
+        help="Values above this percentile will be highlighted as hotspots. Higher percentiles = more exclusive hotspots."
+        )
+    
+        threshold_value = np.nanpercentile(data_plot.values, threshold_pct)
+        
+        st.info(f"**Hotspot threshold: {threshold_value:.2f} {var_info['unit']}** (≥{threshold_pct}th percentile)")
+        
+        hotspot_mask = data_plot.values >= threshold_value
+        hotspot_count = np.sum(hotspot_mask & ~np.isnan(data_plot.values))
+        total_valid_pixels = np.sum(~np.isnan(data_plot.values))
+        hotspot_percentage = (hotspot_count / total_valid_pixels) * 100 if total_valid_pixels > 0 else 0
+        
+        if hotspot_count > 0:
+            hotspot_values = data_plot.values[hotspot_mask & ~np.isnan(data_plot.values)]
+    
+        
+
+with col2:
+    if map_style_key == "Regular Heatmap":
+        fig_map = create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='heatmap')
+        if fig_map is not None:
+            st.plotly_chart(fig_map, width="content", key="main_map")
+    
+    else:
+        fig_hotspot = go.Figure()
+        
+        fig_hotspot.add_trace(go.Heatmap(
+            x=data_plot.longitude.values,
+            y=data_plot.latitude.values,
+            z=data_plot.values,
+            colorscale='Greys',
+            opacity=0.3,
+            showscale=False,
+            hoverinfo='skip',
+            name='Background'
         ))
         
-        percentiles = [
-            (25, 'blue', 'top left'),
-            (50, 'green', 'top'),
-            (75, 'orange', 'top right'),
-            (90, 'red', 'bottom right')
-        ]
+        hotspot_data = np.where(
+            (data_plot.values >= threshold_value) & ~np.isnan(data_plot.values),
+            data_plot.values,
+            np.nan
+        )
         
-        for pct, color, position in percentiles:
-            val = np.nanpercentile(valid_spatial, pct)
-            fig_hist.add_vline(
-                x=val,
-                line_dash="dash",
-                line_color=color,
-                line_width=2,
-                annotation=dict(
-                    text=f"P{pct}<br>{val:.2f}",
-                    font=dict(size=11, color=color, family='Arial Black'),
-                    bgcolor='rgba(255, 255, 255, 0.8)',
-                    bordercolor=color,
-                    borderwidth=1,
-                    borderpad=3
-                ),
-                annotation_position=position
+        fig_hotspot.add_trace(go.Heatmap(
+            x=data_plot.longitude.values,
+            y=data_plot.latitude.values,
+            z=hotspot_data,
+            colorscale=[
+                [0, '#fee5d9'],
+                [0.33, '#fcae91'],
+                [0.66, '#fb6a4a'],
+                [1, '#cb181d']
+            ],
+            colorbar=dict(
+            title=dict(
+                text=f"{var_info['unit']}",
+                side='right' 
             )
+        ),
+            hovertemplate='<b>Lat</b>: %{y:.2f}°N<br>' +
+                        '<b>Lon</b>: %{x:.2f}°E<br>' +
+                        f'<b>{var_info["name"]}</b>: %{{z:.2f}} {var_info["unit"]}<br>' +
+                        '<extra></extra>',
+            name='Hotspots'
+        ))
         
-        fig_hist.update_layout(
-            title='Distribution of Parameter Values',
-            xaxis_title=f'{var_info["name"]} ({var_info["unit"]})',
-            yaxis_title='Frequency',
-            height=500, 
+        fig_hotspot.update_layout(
+            title=f'Hotspot Locations (≥{threshold_pct}th percentile)',
+            xaxis_title='Longitude (°E)',
+            yaxis_title='Latitude (°N)',
+            height=550,
             template='plotly_white',
             showlegend=False
         )
         
-        st.plotly_chart(fig_hist, width='stretch')
-    
-    with tabD:
-        available_vars = ["Mean", "Max"]
-        selected_var = st.selectbox(
-            "Select method",
-            options=available_vars,
-            index=0
+        st.plotly_chart(fig_hotspot, width='stretch')
+        if hotspot_count > 0:
+            hotspot_indices = np.where(hotspot_mask & ~np.isnan(data_plot.values))
+            hotspot_lats = hotspot_indices[0]
+            hotspot_lons = hotspot_indices[1]
+            
+            hotspot_lat_values = data_plot.latitude.values[hotspot_lats]
+            hotspot_lon_values = data_plot.longitude.values[hotspot_lons]
+            
+            center_lat = hotspot_lat_values.mean()
+            center_lon = hotspot_lon_values.mean()
+            lat_range = np.ptp(hotspot_lat_values)  
+            lon_range = np.ptp(hotspot_lon_values)  
+            
+            if lat_range < 2 and lon_range < 2:
+                st.success("🎯 Hotspots are **highly concentrated** in one region")
+            elif lat_range < 5 and lon_range < 5:
+                st.info("📍 Hotspots are **moderately dispersed**")
+            else:
+                st.warning("🌍 Hotspots are **widely scattered** across the region")
+
+flat_max_idx = np.nanargmax(data_plot.values)
+flat_min_idx = np.nanargmin(data_plot.values)
+
+max_lat_idx, max_lon_idx = np.unravel_index(flat_max_idx, data_plot.values.shape)
+min_lat_idx, min_lon_idx = np.unravel_index(flat_min_idx, data_plot.values.shape)
+
+max_lat = float(data_plot.latitude.values[max_lat_idx])
+max_lon = float(data_plot.longitude.values[max_lon_idx])
+min_lat = float(data_plot.latitude.values[min_lat_idx])
+min_lon = float(data_plot.longitude.values[min_lon_idx])
+
+colAAA, colBBB, colCCC, colDDD = st.columns(4)
+with colAAA:
+    st.metric("Mean", f"{np.mean(valid_spatial):.2f} {var_info['unit']}")
+with colBBB:
+    st.metric("Max", f"{np.max(valid_spatial):.2f} {var_info['unit']}",
+          delta=f"at {max_lat:.2f}°N, {max_lon:.2f}°E",
+          delta_color="off")
+with colCCC:
+    st.metric("Min", f"{np.min(valid_spatial):.2f} {var_info['unit']}",
+          delta=f"at {min_lat:.2f}°N, {min_lon:.2f}°E",
+          delta_color="off")
+with colDDD:
+    st.metric("Std Dev", f"{np.std(valid_spatial):.2f} {var_info['unit']}")
+                
+tabA, tabB, tabC, tabD, tabE = st.tabs(["Point Inspector", "Regional Comparison", "Distribution of Parameter Values", " Spatial Gradients", "Bloom Detection Analysis"])
+with tabA:
+    st.markdown("#### Point Inspector")
+    st.caption("Choose any point on the main map and enter it's coordinates to load historical data for that location.")
+    lats = data_plot.latitude.values
+    lons = data_plot.longitude.values
+
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        input_lat = st.number_input(
+            "Latitude (°N)",
+            min_value=float(lats.min()),
+            max_value=float(lats.max()),
+            value = float(lats.mean()),
+            step = 0.01,
+            format="%.2f"
         )
 
-        if selected_var == "Mean":
-            lat_profile = data_plot.mean(dim='longitude')
-            lon_profile = data_plot.mean(dim='latitude')
-        else:
-            lat_profile = data_plot.max(dim='longitude')
-            lon_profile = data_plot.max(dim='latitude')
+    with col2:
+        input_lon = st.number_input(
+            "Longitude (°E)",
+            min_value=float(lons.min()),
+            max_value=float(lons.max()),
+            value = float(lons.mean()),
+            step = 0.01,
+            format="%.2f"
+        )
+        
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)  # vertical alignment
+        inspect = st.button("🔍 Inspect", width="stretch")
+
+    if inspect:
+        st.session_state["clicked_lat"] = input_lat
+        st.session_state["clicked_lon"] = input_lon
+        
+    clicked_lat = st.session_state.get("clicked_lat", None)
+    clicked_lon = st.session_state.get("clicked_lon", None)
+
+    if clicked_lat is not None and clicked_lon is not None:
+        st.markdown(f"#### Time Series at ({clicked_lat:.2f}°N, {clicked_lon:.2f}°E)")
+        st.caption("Values at the nearest grid point across all variables, for all available time steps.")
+        
+        all_time_rows = []
+        filetered_rows = []
+        
+        for var_name, info in VARIABLE_INFO.items():
+            df_all, df_filtered = get_point_timeseries(var_name, clicked_lat, clicked_lon, time_filter)
             
+            for df, rows in [(df_all, all_time_rows), (df_filtered, filetered_rows)]:
+                if df is not None and not df.empty:
+                    vals = df[var_name].dropna()
+                    if len(vals) > 0:
+                        rows.append({
+                            'Variable': info['name'],
+                            'Unit': info['unit'],
+                            'Mean': f"{vals.mean():.2f} {info['unit']}",
+                            'Max': f"{vals.max():.2f} {info['unit']}",
+                            'Min': f"{vals.min():.2f} {info['unit']}",
+                            'Std Dev': f"{vals.std():.2f} {info['unit']}",
+                            'N Months': f"{len(vals)}"
+                        })
+        
+        tab_filtered, tab_all = st.tabs([f"📅 {time_label}", "📅 All Time"])
+        
+        with tab_filtered:
+            st.caption(f"Stats for the selected period: **{time_label}**")
+            if filetered_rows:
+                df_filtered_summary = pd.DataFrame(filetered_rows)
+                st.dataframe(df_filtered_summary, hide_index=True, width='stretch')
+                st.download_button(
+                    label="📥 Download Filtered Summary",
+                    data=df_filtered_summary.to_csv(index=False),
+                    file_name = f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E_{time_label.replace(' ', '_')}.csv",
+                    mime="text/csv",
+                    key="download_filtered_summary")
+            else:
+                st.info(f"No valid data available at this location for the selected time period ({time_label}).")
+                
+        with tab_all:
+            st.caption("Stats for all available time steps (2014-2024)")
+                    
+            if all_time_rows:
+                summary_df = pd.DataFrame(all_time_rows)
+                st.dataframe(summary_df, hide_index=True, width='stretch')
+                
+                csv = summary_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download All-Time Point Summary",
+                    data=csv,
+                    file_name=f"point_summary_{clicked_lat:.2f}N_{clicked_lon:.2f}E_All_Time.csv",
+                    mime="text/csv",
+                    key="download_summary"
+                )
+            else:
+                st.info("No valid data available at this location for any variable.")
+    else:
+        st.info("No data point selected yet")
+
+with tabB:
+
+    regional_means = []
+
+    for region_name, bounds in BALTIC_REGIONS.items():
+        try:
+            region_data = data_plot.sel(
+                latitude=slice(bounds['min_lat'], bounds['max_lat']),
+                longitude=slice(bounds['min_lon'], bounds['max_lon'])
+            )
+            mean_val = float(region_data.mean())
+            max_val  = float(region_data.max())
+            min_val  = float(region_data.min())
+
+            regional_means.append({
+                'Region': region_name,
+                'Mean':   mean_val,
+                'Max':    max_val,
+                'Min':    min_val,
+                'Range':  max_val - min_val
+            })
+        except:
+            continue
+
+    if regional_means:
+        df_regions = pd.DataFrame(regional_means)
+
         col1, col2 = st.columns(2)
 
         with col1:
-            fig_lat = go.Figure()
-            fig_lat.add_trace(go.Scatter(
-                x=lat_profile.latitude.values,  
-                y=lat_profile.values,           
-                mode='lines+markers',
-                line=dict(color=var_info['color'], width=3),
-                marker=dict(size=6),
-                fill='tozeroy', 
-                fillcolor=f'rgba({int(var_info["color"][1:3], 16)}, {int(var_info["color"][3:5], 16)}, {int(var_info["color"][5:7], 16)}, 0.2)',
-                hovertemplate='<b>Latitude</b>: %{x:.2f}°N<br>' +
-                            f'<b>{var_info["name"]}</b>: %{{y:.2f}} {var_info["unit"]}<br>' +
-                            '<extra></extra>'
-            ))
+            fig_regions = go.Figure()
 
-            # Add a vrect for each region's latitude range
-            for region_name, bounds in BALTIC_REGIONS.items():
-                fig_lat.add_vrect(
-                    x0=bounds['min_lat'],
-                    x1=bounds['max_lat'],
-                    annotation_text=region_name,
-                    annotation_position="top left",
-                    annotation=dict(
-                        textangle=-90,
-                        font=dict(size=9),
+            for _, row in df_regions.iterrows():
+                region_color = BALTIC_REGIONS[row['Region']]['color']
+                fig_regions.add_trace(go.Bar(
+                    x=[row['Region']],
+                    y=[row['Mean']],
+                    marker_color=region_color,
+                    marker_line_color='black',
+                    marker_line_width=1.5,
+                    error_y=dict(
+                        type='data',
+                        array=[row['Range'] / 2],
+                        visible=True
                     ),
-                    fillcolor=bounds['color'],
-                    opacity=0.1,
-                    line_width=1,
-                    line_color=bounds['color'],
-                )
-            
-            fig_lat.update_layout(
-                title=f'Latitudinal Profile (South to North) — {selected_var}',
-                xaxis_title='Latitude (°N)', 
-                yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',  
-                height=400,
-                template='plotly_white',
-                showlegend=False
-            )
-                
-            st.plotly_chart(fig_lat, width='stretch')
+                    hovertemplate='<b>%{x}</b><br>' +
+                                f'Mean: %{{y:.2f}} {var_info["unit"]}<br>' +
+                                f'Max: {row["Max"]:.2f} {var_info["unit"]}<br>' +
+                                f'Min: {row["Min"]:.2f} {var_info["unit"]}<br>' +
+                                '<extra></extra>'
+                ))
 
-        with col2:
-            fig_lon = go.Figure()
-            fig_lon.add_trace(go.Scatter(
-                x=lon_profile.longitude.values,
-                y=lon_profile.values,
-                mode='lines+markers',
-                line=dict(color=var_info['color'], width=3),
-                marker=dict(size=6),
-                fill='tozeroy',
-                fillcolor=f'rgba({int(var_info["color"][1:3], 16)}, {int(var_info["color"][3:5], 16)}, {int(var_info["color"][5:7], 16)}, 0.2)',
-                hovertemplate='<b>Longitude</b>: %{x:.2f}°E<br>' +
-                            f'<b>{var_info["name"]}</b>: %{{y:.2f}} {var_info["unit"]}<br>' +
-                            '<extra></extra>'
-            ))
-
-            # Add a vrect for each region's longitude range
-            for region_name, bounds in BALTIC_REGIONS.items():
-                fig_lon.add_vrect(
-                    x0=bounds['min_lon'],
-                    x1=bounds['max_lon'],
-                    annotation_text=region_name,
-                    annotation_position="top left",
-                    annotation=dict(
-                        textangle=-90,
-                        font=dict(size=9),
-                    ),
-                    fillcolor=bounds['color'],
-                    opacity=0.1,
-                    line_width=1,
-                    line_color=bounds['color'],
-                )
-            
-            fig_lon.update_layout(
-                title=f'Longitudinal Profile (West to East) — {selected_var}',
-                xaxis_title='Longitude (°E)',
+            fig_regions.update_layout(
+                title=f'Regional {var_info["name"]} Comparison',
+                xaxis_title='Region',
                 yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',
                 height=400,
                 template='plotly_white',
-                showlegend=False
+                showlegend=False,
+                xaxis_tickangle=-25
             )
-            
-            st.plotly_chart(fig_lon, width='stretch')
-            
-        max_lat_idx = lat_profile.argmax()
-        peak_lat = float(lat_profile.latitude.values[max_lat_idx])
-        peak_max_lat = float(lat_profile.max())
 
-        max_lon_idx = lon_profile.argmax()
-        peak_lon = float(lon_profile.longitude.values[max_lon_idx])
-        peak_max_lon = float(lon_profile.max())
-
-        overall_val = float(data_plot.mean()) if selected_var == "Mean" else float(data_plot.max())
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(
-                label=f"Overall {selected_var}",
-                value=f"{overall_val:.2f} {var_info['unit']}",
-            )
+            st.plotly_chart(fig_regions, width='stretch')
 
         with col2:
-            st.metric(
-                label=f"Peak Latitude ({selected_var})",
-                value=f"{peak_max_lat:.2f} {var_info['unit']}",
-                delta=f"at {peak_lat:.2f}°N"
+            fig = go.Figure()
+
+            for name, region in BALTIC_REGIONS.items():
+                fig.add_trace(make_bbox_trace(name, region))
+
+            fig.update_layout(
+                geo=dict(
+                    projection_type='mercator',
+                    showland=True,
+                    landcolor='rgb(230, 230, 220)',
+                    showocean=True,
+                    oceancolor='rgb(210, 230, 245)',
+                    showcoastlines=True,
+                    coastlinecolor='rgb(100, 100, 100)',
+                    coastlinewidth=1,
+                    showlakes=True,
+                    lakecolor='rgb(210, 230, 245)',
+                    lonaxis=dict(range=[9, 32]),
+                    lataxis=dict(range=[53, 67]),
+                ),
+                height=400,
+                margin=dict(l=0, r=0, t=0, b=0),
+                legend=dict(
+                    title="Regions",
+                    bgcolor="rgba(255,255,255,0.8)",
+                    bordercolor="lightgrey",
+                    borderwidth=1
+                )
             )
 
-        with col3:
-            st.metric(
-                label=f"Peak Longitude ({selected_var})",
-                value=f"{peak_max_lon:.2f} {var_info['unit']}",
-                delta=f"at {peak_lon:.2f}°E"
-            )
+            st.plotly_chart(fig, width='stretch')
+        st.markdown("**Regional Statistics**")
 
-with tab2:
+        df_display = df_regions.copy()
+        for col in ['Mean', 'Max', 'Min', 'Range']:
+            df_display[col] = df_display[col].apply(lambda x: f"{x:.2f}")
+
+        st.dataframe(df_display, hide_index=True, width='stretch', height=280)
+    
+with tabC:
+    text = ("This histogram shows how values are spread across all spatial pixels in the selected area at a given point in time. The x-axis represents the variable's value and the y-axis shows how many pixels have that value - tall bars mean many pixels share a similar reading, while a wide spread indicates high spatial variability across the region.")
+    st.markdown("#### Distribution of Parameter Values", help=text)
+
+    fig_hist = go.Figure()
+    fig_hist.add_trace(go.Histogram(
+        x=valid_spatial,
+        nbinsx=50,
+        marker_color=var_info['color'],
+        marker_line_color='black',
+        marker_line_width=0.5,
+        opacity=0.7,
+        name='Distribution'
+    ))
+    
+    percentiles = [
+        (25, 'blue', 'top left'),
+        (50, 'green', 'top'),
+        (75, 'orange', 'top right'),
+        (90, 'red', 'bottom right')
+    ]
+    
+    for pct, color, position in percentiles:
+        val = np.nanpercentile(valid_spatial, pct)
+        fig_hist.add_vline(
+            x=val,
+            line_dash="dash",
+            line_color=color,
+            line_width=2,
+            annotation=dict(
+                text=f"P{pct}<br>{val:.2f}",
+                font=dict(size=11, color=color, family='Arial Black'),
+                bgcolor='rgba(255, 255, 255, 0.8)',
+                bordercolor=color,
+                borderwidth=1,
+                borderpad=3
+            ),
+            annotation_position=position
+        )
+    
+    fig_hist.update_layout(
+        title='Distribution of Parameter Values',
+        xaxis_title=f'{var_info["name"]} ({var_info["unit"]})',
+        yaxis_title='Frequency',
+        height=500, 
+        template='plotly_white',
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig_hist, width='stretch')
+
+with tabD:
+    available_vars = ["Mean", "Max"]
+    selected_var = st.selectbox(
+        "Select method",
+        options=available_vars,
+        index=0
+    )
+
+    if selected_var == "Mean":
+        lat_profile = data_plot.mean(dim='longitude')
+        lon_profile = data_plot.mean(dim='latitude')
+    else:
+        lat_profile = data_plot.max(dim='longitude')
+        lon_profile = data_plot.max(dim='latitude')
+        
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fig_lat = go.Figure()
+        fig_lat.add_trace(go.Scatter(
+            x=lat_profile.latitude.values,  
+            y=lat_profile.values,           
+            mode='lines+markers',
+            line=dict(color=var_info['color'], width=3),
+            marker=dict(size=6),
+            fill='tozeroy', 
+            fillcolor=f'rgba({int(var_info["color"][1:3], 16)}, {int(var_info["color"][3:5], 16)}, {int(var_info["color"][5:7], 16)}, 0.2)',
+            hovertemplate='<b>Latitude</b>: %{x:.2f}°N<br>' +
+                        f'<b>{var_info["name"]}</b>: %{{y:.2f}} {var_info["unit"]}<br>' +
+                        '<extra></extra>'
+        ))
+
+        # Add a vrect for each region's latitude range
+        for region_name, bounds in BALTIC_REGIONS.items():
+            fig_lat.add_vrect(
+                x0=bounds['min_lat'],
+                x1=bounds['max_lat'],
+                annotation_text=region_name,
+                annotation_position="top left",
+                annotation=dict(
+                    textangle=-90,
+                    font=dict(size=9),
+                ),
+                fillcolor=bounds['color'],
+                opacity=0.1,
+                line_width=1,
+                line_color=bounds['color'],
+            )
+        
+        fig_lat.update_layout(
+            title=f'Latitudinal Profile (South to North) — {selected_var}',
+            xaxis_title='Latitude (°N)', 
+            yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',  
+            height=400,
+            template='plotly_white',
+            showlegend=False
+        )
+            
+        st.plotly_chart(fig_lat, width='stretch')
+
+    with col2:
+        fig_lon = go.Figure()
+        fig_lon.add_trace(go.Scatter(
+            x=lon_profile.longitude.values,
+            y=lon_profile.values,
+            mode='lines+markers',
+            line=dict(color=var_info['color'], width=3),
+            marker=dict(size=6),
+            fill='tozeroy',
+            fillcolor=f'rgba({int(var_info["color"][1:3], 16)}, {int(var_info["color"][3:5], 16)}, {int(var_info["color"][5:7], 16)}, 0.2)',
+            hovertemplate='<b>Longitude</b>: %{x:.2f}°E<br>' +
+                        f'<b>{var_info["name"]}</b>: %{{y:.2f}} {var_info["unit"]}<br>' +
+                        '<extra></extra>'
+        ))
+
+        # Add a vrect for each region's longitude range
+        for region_name, bounds in BALTIC_REGIONS.items():
+            fig_lon.add_vrect(
+                x0=bounds['min_lon'],
+                x1=bounds['max_lon'],
+                annotation_text=region_name,
+                annotation_position="top left",
+                annotation=dict(
+                    textangle=-90,
+                    font=dict(size=9),
+                ),
+                fillcolor=bounds['color'],
+                opacity=0.1,
+                line_width=1,
+                line_color=bounds['color'],
+            )
+        
+        fig_lon.update_layout(
+            title=f'Longitudinal Profile (West to East) — {selected_var}',
+            xaxis_title='Longitude (°E)',
+            yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',
+            height=400,
+            template='plotly_white',
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_lon, width='stretch')
+        
+    max_lat_idx = lat_profile.argmax()
+    peak_lat = float(lat_profile.latitude.values[max_lat_idx])
+    peak_max_lat = float(lat_profile.max())
+
+    max_lon_idx = lon_profile.argmax()
+    peak_lon = float(lon_profile.longitude.values[max_lon_idx])
+    peak_max_lon = float(lon_profile.max())
+
+    overall_val = float(data_plot.mean()) if selected_var == "Mean" else float(data_plot.max())
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            label=f"Overall {selected_var}",
+            value=f"{overall_val:.2f} {var_info['unit']}",
+        )
+
+    with col2:
+        st.metric(
+            label=f"Peak Latitude ({selected_var})",
+            value=f"{peak_max_lat:.2f} {var_info['unit']}",
+            delta=f"at {peak_lat:.2f}°N"
+        )
+
+    with col3:
+        st.metric(
+            label=f"Peak Longitude ({selected_var})",
+            value=f"{peak_max_lon:.2f} {var_info['unit']}",
+            delta=f"at {peak_lon:.2f}°E"
+        )
+
+with tabE:
     col1, col2 = st.columns(2)
 
     with col1:
