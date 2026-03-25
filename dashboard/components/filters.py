@@ -98,7 +98,7 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
         title=f'{var_info["name"]} - {time_label}',
         xaxis_title='Longitude (°E)',
         yaxis_title='Latitude (°N)',
-        height=600,
+        height=550,
         template='plotly_white',
         xaxis=dict(range=[lons.min(), lons.max()]),
         yaxis=dict(range=[lats.min(), lats.max()])

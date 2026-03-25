@@ -61,20 +61,31 @@ with col1:
         "Bloom Threshold (mg/m³)",
         min_value=0.5,
         max_value=10.0,
-        value=5.0,
+        value=2.0,
         step=0.1,
         help="Chlorophyll-a concentration above this value indicates a bloom"
     )
     
     spatial_extent = st.slider(
         "Min. Spatial Extent (%)",
-        min_value=1,
-        max_value=50,
-        value=5,
+        min_value=1.0,
+        max_value=20.0,
+        value=5.0,
+        step=0.1,
         help="Minimum percentage of area affected to count as bloom event"
     )
     intensity_levels = st.checkbox("Show Intensity Levels", value=True)
+    
+if 'moderate_threshold' not in st.session_state:
+    st.session_state.moderate_threshold = 3.0
+if 'high_threshold' not in st.session_state: 
+    st.session_state.high_threshold = 5.0
 
+if st.session_state.moderate_threshold < bloom_threshold:
+    st.session_state.moderate_threshold = bloom_threshold
+if st.session_state.high_threshold < st.session_state.moderate_threshold:
+    st.session_state.high_threshold = st.session_state.moderate_threshold
+    
 with col2:
     
     if intensity_levels:
@@ -82,14 +93,14 @@ with col2:
             "Moderate Bloom (mg/m³)",
             min_value=bloom_threshold,
             max_value=10.0,
-            value=5.0
+            key = "moderate_threshold"
         )
         
         high_threshold = st.number_input(
             "High Bloom (mg/m³)",
             min_value=moderate_threshold,
             max_value=10.0,
-            value=7.0
+            key = "high_threshold"
         )
 
 st.markdown("---")
