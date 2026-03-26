@@ -603,6 +603,10 @@ with tabD:
 
         # Add a vrect for each region's latitude range
         for region_name, bounds in BALTIC_REGIONS.items():
+            lat_min_data = float(lat_profile.latitude.min())
+            lat_max_data = float(lat_profile.latitude.max())
+            if bounds['max_lat'] < lat_min_data or bounds['min_lat'] > lat_max_data:
+                continue
             fig_lat.add_vrect(
                 x0=bounds['min_lat'],
                 x1=bounds['max_lat'],
@@ -646,6 +650,12 @@ with tabD:
 
         # Add a vrect for each region's longitude range
         for region_name, bounds in BALTIC_REGIONS.items():
+            lon_min_data = float(lon_profile.longitude.min())
+            lon_max_data = float(lon_profile.longitude.max())
+
+            if bounds['max_lon'] < lon_min_data or bounds['min_lon'] > lon_max_data:
+                continue
+
             fig_lon.add_vrect(
                 x0=bounds['min_lon'],
                 x1=bounds['max_lon'],
