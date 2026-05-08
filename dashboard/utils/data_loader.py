@@ -7,12 +7,16 @@ from config import DATA_PATHS
 import sys
 from huggingface_hub import hf_hub_download, login
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import numpy as np
+import pandas as pd
+import json
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 logger = logging.getLogger(__name__)
 
 HF_REPO_ID = "andreaatosheva/data"
+HF_REPO_ID_MODEL = "andreaatosheva/model"
 HF_REPO_TYPE = "dataset"
 
 HF_FILE_MAPPING = {
@@ -33,6 +37,34 @@ VAR_TO_PATH = {
     'wind_speed':      'wind',
     'solar_radiation': 'solar',
     'rainfall':        'rain'
+}
+
+MODEL_NPY_FILES = {
+    "sameday_test_idx" : "model/sameday_test_idx.npy",
+    "forecast_test_idx" : "model/forecast_test_idx.npy"
+}
+
+YEARLY_NPY_FILES = {
+    "features_2014": "model/features_2014.npy",
+    "features_2015": "model/features_2015.npy",
+    "features_2016": "model/features_2016.npy",
+    "features_2017": "model/features_2017.npy",
+    "features_2018": "model/features_2018.npy",
+    "features_2019": "model/features_2019.npy",
+    "features_2020": "model/features_2020.npy",
+    "features_2021": "model/features_2021.npy",
+    "features_2022": "model/features_2022.npy",
+    "features_2023": "model/features_2023.npy",
+    "features_2024": "model/features_2024.npy"
+    
+}
+
+MODEL_JSON_FILES = {
+    "norm_stats" : "model/norm_stats.json"
+}
+
+MODEL_NC_FILES = {
+    "model_chl_ds": "model/chl-subset-model.nc"
 }
 
 def check_data_files():
@@ -174,3 +206,115 @@ def load_variable_data(var_name):
         return None
     
     return get_variable_data(ds, var_name)
+
+@st.cache_data(ttl=3600)
+def load_model_npy(file_key: str) -> Optional[np.ndarray]:
+    try:
+        filename = MODEL_NPY_FILES.get(file_key)
+        if filename is None:
+            logger.error(f"No .npy file mapped for key '{file_key}'")
+            return None
+        
+        file_path = hf_hub_download(
+            repo_id = HF_REPO_ID_MODEL,
+            filename = filename,
+            repo_type = HF_REPO_TYPE
+        )
+        return np.load(file_path)
+    except Exception as e:
+        logger.error(f"Error loading model file '{file_key}': {e}")
+        return None
+
+@st.cache_data(ttl=3600)
+def load_yearly_npy(file_key: str) -> Optional[np.ndarray]:
+    try:
+        filename = YEARLY_NPY_FILES.get(file_key)
+        if filename is None:
+            logger.error(f"No .npy file mapped for key '{file_key}'")
+            return None
+        
+        file_path = hf_hub_download(
+            repo_id = HF_REPO_ID_MODEL,
+            filename = filename,
+            repo_type = HF_REPO_TYPE
+        )
+        return np.load(file_path)
+    except Exception as e:
+        logger.error(f"Error loading yearly file '{file_key}': {e}")
+        return None
+    
+
+
+@st.cache_data(ttl=3600)
+def load_model_nc(file_key: str) -> xr.Dataset:
+    """Load a .nc file from HuggingFace without saving locally"""
+    try:
+        filename = MODEL_NC_FILES.get(file_key)
+        if filename is None:
+            logger.error(f"No .nc file mapped for key '{file_key}'")
+            return None
+        path = hf_hub_download(
+            repo_id=HF_REPO_ID_MODEL,
+            filename=filename,
+            repo_type=HF_REPO_TYPE
+        )
+        return xr.open_dataset(path)
+    except Exception as e:
+        logger.error(f"Error loading {file_key} from HuggingFace: {e}")
+        return None
+
+@st.cache_data(ttl=3600)
+def load_model_json(file_key: str) -> dict:
+    """Load a .json file from HuggingFace"""
+    try:
+        filename = MODEL_JSON_FILES.get(file_key)
+        if filename is None:
+            logger.error(f"No .json file mapped for key '{file_key}'")
+            return None
+        path = hf_hub_download(
+            repo_id=HF_REPO_ID_MODEL,
+            filename=filename,
+            repo_type=HF_REPO_TYPE
+        )
+        with open(path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading {file_key} from HuggingFace: {e}")
+        return None
+
+
+@st.cache_data(ttl=3600)
+def load_model_data():
+    """Load all model-related data (npys, nc, json)"""
+    model_data = {}
+    
+    # Load .npy files
+    for key in MODEL_NPY_FILES.keys():
+        model_data[key] = load_model_npy(key)
+    
+    # Load .nc files
+    for key in MODEL_NC_FILES.keys():
+        model_data[key] = load_model_nc(key)
+    
+    # Load .json files
+    for key in MODEL_JSON_FILES.keys():
+        model_data[key] = load_model_json(key)
+    
+    return model_data
+
+def get_features_for_date(selected_date, all_dates):
+    year = pd.Timestamp(selected_date).year
+    file_key = f"features_{year}"
+    
+    features_year = load_yearly_npy(file_key)
+    if features_year is None:
+        logger.error(f"Features for year {year} could not be loaded.")
+        return None, None, None
+    
+    year_mask = pd.to_datetime(all_dates).year == year
+    year_dates = pd.to_datetime(all_dates)[year_mask]
+    day_idx_year = np.where(year_dates == pd.to_datetime(selected_date))[0][0]
+    global_idx = np.where(all_dates == pd.to_datetime(selected_date))[0][0]
+    
+    return features_year, day_idx_year, global_idx
+

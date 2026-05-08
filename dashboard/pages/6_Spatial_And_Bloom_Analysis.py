@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from utils.helper import show_memory_usage, make_bbox_trace, get_point_timeseries
+from utils.helper import make_bbox_trace, get_point_timeseries, compute_threshold_for_slice, compute_centroid, get_time_groups
 from utils.data_loader import load_variable_data
 from plotly.subplots import make_subplots
 import gc
@@ -71,6 +71,8 @@ with col1:
         options=["Single Month", "Seasonal Average", "Annual Average", "All Time Average"],
         index=0
     )
+    
+    log_scale = st.toggle("Logaritmic Scale", value=False)
 
     if time_agg == "Single Month":
         available_years = sorted(np.unique(data.time.dt.year.values))
@@ -213,7 +215,7 @@ with col1:
 
 with col2:
     if map_style_key == "Regular Heatmap":
-        fig_map = create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='heatmap')
+        fig_map = create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='heatmap', log_scale=log_scale)
         if fig_map is not None:
             st.plotly_chart(fig_map, width="content", key="main_map")
     
@@ -306,16 +308,14 @@ with colAAA:
     st.metric("Mean", f"{np.mean(valid_spatial):.2f} {var_info['unit']}")
 with colBBB:
     st.metric("Max", f"{np.max(valid_spatial):.2f} {var_info['unit']}",
-          delta=f"at {max_lat:.2f}°N, {max_lon:.2f}°E",
-          delta_color="off")
+          delta=f"at {max_lat:.2f}°N, {max_lon:.2f}°E")
 with colCCC:
     st.metric("Min", f"{np.min(valid_spatial):.2f} {var_info['unit']}",
-          delta=f"at {min_lat:.2f}°N, {min_lon:.2f}°E",
-          delta_color="off")
+          delta=f"at {min_lat:.2f}°N, {min_lon:.2f}°E")
 with colDDD:
     st.metric("Std Dev", f"{np.std(valid_spatial):.2f} {var_info['unit']}")
                 
-tabA, tabB, tabC, tabD, tabE = st.tabs(["Point Inspector", "Regional Comparison", "Distribution of Parameter Values", " Spatial Gradients", "Bloom Detection Analysis"])
+tabA, tabB, tabC, tabD, tabE, tabF = st.tabs(["Point Inspector", "Regional Comparison", "Distribution of Parameter Values", " Spatial Gradients", "Bloom Detection Analysis", "Hotspot Dynamics"])
 with tabA:
     st.markdown("#### Point Inspector")
     st.caption("Choose any point on the main map and enter it's coordinates to load historical data for that location.")
@@ -768,6 +768,7 @@ with tabE:
         with col2:
 
             chl_mean = chl_data_r.mean(dim=['latitude', 'longitude'])
+            chl_max = chl_data_r.max(dim=['latitude', 'longitude'])
             bloom_mask = chl_mean > bloom_threshold
 
             if intensity_levels:
@@ -782,24 +783,42 @@ with tabE:
             total_months = len(chl_mean['time'])
             bloom_percentage = (n_bloom_months / total_months) * 100
 
-            st.markdown("##### Bloom Event Summary")
+            st.markdown("##### Bloom Event Summary for Whole Time Period", help="This section summarizes bloom conditions across the entire region based on the regional average chlorophyll concentration. It counts how many months exceeded the bloom threshold and what percentage of the total time period that represents. It also provides insights into bloom intensity and whether blooms were widespread or localised.")
             col1, col2 = st.columns(2)
 
             with col1:
                 st.metric(
                     label="Bloom Months Detected",
                     value=f"{n_bloom_months}",
-                    delta=f"{bloom_percentage:.1f}% of total"
+                    delta=f"{bloom_percentage:.1f}% of total",
+                    help="Number of months where the **regional average** chlorophyll exceeded the bloom threshold. Represents widespread bloom conditions across the whole area."
                 )
+                st.text("")
+
                 if n_bloom_months > 0:
                     bloom_values = chl_mean.values[bloom_mask]
                     avg_bloom_intensity = np.mean(bloom_values)
                     st.metric(
                         label="Avg Bloom Intensity",
-                        value=f"{avg_bloom_intensity:.2f} mg/m³"
+                        value=f"{avg_bloom_intensity:.2f} mg/m³",
+                        help="Average chlorophyll concentration during bloom months, based on the regional mean. Only months exceeding the bloom threshold are included."
                     )
                 else:
                     st.metric(label="Avg Bloom Intensity", value="N/A")
+                    
+                peak_pixel = float(chl_max.max())
+                peak_pixel_date = str(chl_max.idxmax('time').values)[:10]
+                n_high_pixel = (chl_max > high_threshold).sum().values
+                n_bloom_pixel = (chl_max > bloom_threshold).sum().values
+                
+                st.text("")
+
+                st.metric(
+                    label="Peak Pixel Bloom",
+                    value=f"{peak_pixel:.2f} mg/m³",
+                    delta=peak_pixel_date,
+                    help="The single highest chlorophyll value recorded in any individual pixel in any month. Unlike the regional average, this captures extreme localised bloom events that may be diluted when averaging across the region."
+                )
 
             with col2:
 
@@ -809,7 +828,8 @@ with tabE:
                     st.metric(
                         label="Peak Bloom",
                         value=f"{max_bloom:.2f} mg/m³",
-                        delta=max_bloom_date
+                        delta=max_bloom_date,
+                        help="The highest regional average chlorophyll recorded in any single month. This is the mean across all pixels — local hotspots may be much higher."
                     )
                 else:
                     st.metric(label="Peak Bloom", value="N/A")
@@ -819,10 +839,19 @@ with tabE:
                     st.metric(
                         label="High Intensity Events",
                         value=f"{n_high}",
-                        delta=f">{high_threshold} mg/m³"
+                        delta=f">{high_threshold} mg/m³",
+                        help=f"Months where the **regional average** exceeded {high_threshold} mg/m³. Because this uses the mean, localised hotspots may not be captured here — see the pixel-level metric below."
                     )
                 else:
                     st.metric(label="High Intensity Events", value="N/A")
+                
+                st.metric(
+                    label="High Intensity Events (pixel level)",
+                    value=f"{n_high_pixel}",
+                    delta=f">{high_threshold} mg/m³ in at least 1 pixel",
+                    help=f"Months where at least one pixel exceeded the high intensity threshold of {high_threshold} mg/m³. Compare this to the regional average high intensity count above to understand whether blooms are widespread or localised."
+                )
+                
     st.markdown("---")
     
     tabAA, tabBB, tabCC, tabDD = st.tabs(["Bloom Timeline", "Environmental Conditions Timeline", "Monthly Bloom Frequency", "Seasonal Bloom Distribution"])
@@ -1275,7 +1304,421 @@ with tabE:
             # Peak season
             peak_season = max(seasonal_blooms.items(), key=lambda x: x[1]['count'])[0]
             st.success(f"🌟 **Peak Bloom Season**: {peak_season}")
+
+with tabF:
+    st.markdown("#### Track where hotspots occur consistently over time and whether their centre of mass is shifting.")
+
+    col_ctrl, col_main = st.columns([1, 3], gap="small")
+    
+    with col_ctrl:
+        dynamics_var = st.selectbox(
+            "**Variable**",
+            options=list(VARIABLE_INFO.keys()),
+            format_func=lambda x: VARIABLE_INFO[x]['name'],
+            index=0,
+            key="dynamics_var"
+        )
+        dyn_var_info = VARIABLE_INFO[dynamics_var]
+        dyn_data_full = load_variable_data(dynamics_var)
+
+        # Apply same regional slice as main map
+        if map_area_key != "Full Baltic Region":
+            bounds = BALTIC_REGIONS[map_area_key]
+            dyn_data = dyn_data_full.sel(
+                latitude=slice(bounds['min_lat'], bounds['max_lat']),
+                longitude=slice(bounds['min_lon'], bounds['max_lon'])
+            )
+        else:
+            dyn_data = dyn_data_full
+        
+        dyn_threshold_pct = st.slider(
+            "Hotspot Percentile Threshold",
+            min_value=50, max_value=99, value=85, step=5,
+            key="dyn_threshold_pct",
+            help="Pixels above this percentile in each time step count as hotspots."
+        )
+        
+        granularity = st.selectbox(
+            "**Time Granularity**",
+            options=["Month-by-month", "Season-by-season", "Year-by-year"],
+            index=0,
+            key="dyn_granularity"
+        )
+
+        persistence_min = st.slider(
+            "Chronic Hotspot Min. (%)",
+            min_value=10, max_value=80, value=40, step=5,
+            key="dyn_persist_min",
+            help="Pixels above this frequency % are labelled chronic hotspots."
+        )
+    
+    with col_main:
+        time_groups = get_time_groups(dyn_data, granularity)
+        centroids = []
+        hotspot_counts = []
+        
+        first_slice = time_groups[0][1]
+        persistence_accumulator = np.zeros(first_slice.values.shape, dtype=float)
+        valid_mask = np.zeros(first_slice.values.shape, dtype=float)
+        global_threshold = np.nanpercentile(dyn_data.values, dyn_threshold_pct)
+        
+        for label, slice in time_groups:
+            threshold = compute_threshold_for_slice(slice, dyn_threshold_pct)
+            binary = ((slice.values >= global_threshold) & ~np.isnan(slice.values)).astype(float)
+            persistence_accumulator += binary
+            valid_mask += (~np.isnan(slice.values)).astype(float)
             
+            c_lat, c_lon = compute_centroid(slice, global_threshold)
+            centroids.append({"label": label, "lat":c_lat, "lon": c_lon})
+            
+            n_hotspots = int(binary.sum())
+            n_valid = int((~np.isnan(slice.values)).sum())
+            hotspot_counts.append({"label": label, "n_hotspots": n_hotspots, "n_valid": n_valid})
+        
+            with np.errstate(divide='ignore', invalid='ignore'):
+                persistence_pct = np.where(
+                    valid_mask > 0,
+                    (persistence_accumulator / valid_mask) * 100,
+                    np.nan
+                )
+        dyn_tab1, dyn_tab2, dyn_tab3 = st.tabs([
+            "📍 Persistence Map",
+            "🧭 Centroid Drift",
+            "📊 Granularity Breakdown"
+        ])
+        
+        with dyn_tab1:
+            st.caption(
+                "Each pixel is coloured by the percentage of time steps in which it was a hotspot. "
+                "Dark red = chronic hotspot. Light = occasional."
+            )
+            
+            lats = first_slice.latitude.values
+            lons = first_slice.longitude.values
+            
+            fig_persist = go.Figure()
+
+            fig_persist.add_trace(go.Heatmap(
+                x=lons,
+                y=lats,
+                z=persistence_pct,
+                colorscale=[
+                    [0.0,  '#f7fbff'],
+                    [0.2,  '#c6dbef'],
+                    [0.4,  '#6baed6'],
+                    [0.6,  '#f16913'],
+                    [0.8,  '#d94801'],
+                    [1.0,  '#7f2704']
+                ],
+                zmin=0,
+                zmax=100,
+                colorbar=dict(
+                    title=dict(text="% of time<br>as hotspot", side='right'),
+                    ticksuffix="%"
+                ),
+                hovertemplate=(
+                    '<b>Lat</b>: %{y:.2f}°N<br>'
+                    '<b>Lon</b>: %{x:.2f}°E<br>'
+                    '<b>Hotspot frequency</b>: %{z:.1f}%<br>'
+                    '<extra></extra>'
+                )
+            ))
+
+            # Replace Contour with a scatter overlay of chronic hotspot pixels
+            chronic_mask = (persistence_pct >= persistence_min) & ~np.isnan(persistence_pct)
+            if chronic_mask.any():
+                lat_grid, lon_grid = np.meshgrid(lats, lons, indexing='ij')
+                chronic_lats = lat_grid[chronic_mask]
+                chronic_lons = lon_grid[chronic_mask]
+
+                fig_persist.add_trace(go.Scatter(
+                    x=chronic_lons,
+                    y=chronic_lats,
+                    mode='markers',
+                    marker=dict(
+                        size=3,
+                        color='black',
+                        opacity=0.4,
+                        symbol='circle'
+                    ),
+                    name=f'Chronic hotspot (≥{persistence_min}%)',
+                    hovertemplate=(
+                        '<b>Chronic Hotspot</b><br>'
+                        'Lat: %{y:.2f}°N<br>'
+                        'Lon: %{x:.2f}°E<br>'
+                        '<extra></extra>'
+                    )
+                ))
+
+            fig_persist.update_layout(
+                title=f'Hotspot Persistence Map — {granularity} ({dyn_threshold_pct}th percentile threshold)',
+                xaxis_title='Longitude (°E)',
+                yaxis_title='Latitude (°N)',
+                height=500,
+                template='plotly_white',
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+            )
+
+            st.plotly_chart(fig_persist, width="stretch", key="persist_map")
+            
+            total_valid_pixels = int((~np.isnan(persistence_pct)).sum())
+            chronic_pixels = int((persistence_pct >= persistence_min).sum())
+            episodic_pixels = int(((persistence_pct > 0) & (persistence_pct < persistence_min)).sum())
+            never_pixels = total_valid_pixels - chronic_pixels - episodic_pixels
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Valid Pixels", f"{total_valid_pixels:,}")
+            m2.metric(
+                f"Chronic (≥{persistence_min}%)",
+                f"{chronic_pixels:,}",
+                delta=f"{chronic_pixels/total_valid_pixels*100:.1f}% of area"
+            )
+            m3.metric(
+                "Episodic",
+                f"{episodic_pixels:,}",
+                delta=f"{episodic_pixels/total_valid_pixels*100:.1f}% of area"
+            )
+            m4.metric(
+                "Never a Hotspot",
+                f"{never_pixels:,}",
+                delta=f"{never_pixels/total_valid_pixels*100:.1f}% of area"
+            )
+            
+        with dyn_tab2:
+            st.caption(
+                "The weighted centre of mass of all hotspot pixels at each time step. "
+                "A drifting centroid means hotspots are migrating across the region over time."
+            )
+            df_centroids = pd.DataFrame(centroids).dropna(subset=['lat', 'lon'])
+
+            if df_centroids.empty:
+                st.warning("No valid centroids could be computed. Try lowering the hotspot threshold.")
+            else:
+                # Colour by time index for gradient effect
+                df_centroids = df_centroids.reset_index(drop=True)
+                df_centroids['time_idx'] = df_centroids.index
+                n_steps = len(df_centroids)
+
+                fig_drift = go.Figure()
+
+                # Add the underlying Baltic map as a faint heatmap for geographic context
+                # using the persistence data as background
+                fig_drift.add_trace(go.Heatmap(
+                    x=lons,
+                    y=lats,
+                    z=np.where(~np.isnan(persistence_pct), 1, np.nan),  # land/sea mask only
+                    colorscale=[[0, '#d6eaf8'], [1, '#d6eaf8']],        # flat light blue
+                    showscale=False,
+                    hoverinfo='skip'
+                ))
+
+                # Trail line connecting centroids in time order
+                fig_drift.add_trace(go.Scatter(
+                    x=df_centroids['lon'],
+                    y=df_centroids['lat'],
+                    mode='lines',
+                    line=dict(width=1.5, color='grey', dash='dot'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+
+                # Centroid points coloured by time
+                fig_drift.add_trace(go.Scatter(
+                    x=df_centroids['lon'],
+                    y=df_centroids['lat'],
+                    mode='markers',
+                    marker=dict(
+                        size=10,
+                        color=df_centroids['time_idx'],
+                        colorscale='Plasma',
+                        showscale=True,
+                        colorbar=dict(
+                            title="Time step",
+                            tickvals=[0, n_steps // 2, n_steps - 1],
+                            ticktext=[
+                                df_centroids['label'].iloc[0],
+                                df_centroids['label'].iloc[n_steps // 2],
+                                df_centroids['label'].iloc[-1]
+                            ]
+                        ),
+                        line=dict(width=1, color='black')
+                    ),
+                    text=df_centroids['label'],
+                    hovertemplate=(
+                        '<b>%{text}</b><br>'
+                        'Centroid Lat: %{y:.3f}°N<br>'
+                        'Centroid Lon: %{x:.3f}°E<br>'
+                        '<extra></extra>'
+                    ),
+                    showlegend=False
+                ))
+
+                # Start marker
+                fig_drift.add_trace(go.Scatter(
+                    x=[df_centroids['lon'].iloc[0]],
+                    y=[df_centroids['lat'].iloc[0]],
+                    mode='markers',
+                    marker=dict(size=16, symbol='triangle-up', color='green',
+                                line=dict(width=2, color='black')),
+                    name=f'Start ({df_centroids["label"].iloc[0]})',
+                    hovertemplate=f'<b>Start: {df_centroids["label"].iloc[0]}</b><br>'
+                                f'Lat: {df_centroids["lat"].iloc[0]:.3f}°N<br>'
+                                f'Lon: {df_centroids["lon"].iloc[0]:.3f}°E<br><extra></extra>'
+                ))
+
+                # End marker
+                fig_drift.add_trace(go.Scatter(
+                    x=[df_centroids['lon'].iloc[-1]],
+                    y=[df_centroids['lat'].iloc[-1]],
+                    mode='markers',
+                    marker=dict(size=16, symbol='square', color='red',
+                                line=dict(width=2, color='black')),
+                    name=f'End ({df_centroids["label"].iloc[-1]})',
+                    hovertemplate=f'<b>End: {df_centroids["label"].iloc[-1]}</b><br>'
+                                f'Lat: {df_centroids["lat"].iloc[-1]:.3f}°N<br>'
+                                f'Lon: {df_centroids["lon"].iloc[-1]:.3f}°E<br><extra></extra>'
+                ))
+
+                # Tight zoom around actual centroid range with small padding
+                pad_lat = max(1.0, (df_centroids['lat'].max() - df_centroids['lat'].min()) * 0.5)
+                pad_lon = max(1.0, (df_centroids['lon'].max() - df_centroids['lon'].min()) * 0.5)
+
+                fig_drift.update_layout(
+                    title=f'Hotspot Centroid Drift — {granularity}',
+                    xaxis=dict(
+                        title='Longitude (°E)',
+                        range=[df_centroids['lon'].min() - pad_lon, df_centroids['lon'].max() + pad_lon]
+                    ),
+                    yaxis=dict(
+                        title='Latitude (°N)',
+                        range=[df_centroids['lat'].min() - pad_lat, df_centroids['lat'].max() + pad_lat],
+                        scaleanchor='x',
+                        scaleratio=1
+                    ),
+                    height=500,
+                    template='plotly_white',
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+                )
+
+
+                st.plotly_chart(fig_drift, width='stretch', key="centroid_drift")
+
+                # Directional stats
+                lat_shift = df_centroids['lat'].iloc[-1] - df_centroids['lat'].iloc[0]
+                lon_shift = df_centroids['lon'].iloc[-1] - df_centroids['lon'].iloc[0]
+                total_displacement_km = np.sqrt((lat_shift * 111) ** 2 + (lon_shift * 111) ** 2)
+
+                lat_dir = "north" if lat_shift > 0 else "south"
+                lon_dir = "east" if lon_shift > 0 else "west"
+
+                s1, s2, s3, s4 = st.columns(4)
+                s1.metric("Total Displacement", f"{total_displacement_km:.1f} km")
+                s2.metric("Latitudinal Shift", f"{abs(lat_shift):.3f}°", delta=lat_dir)
+                s3.metric("Longitudinal Shift", f"{abs(lon_shift):.3f}°", delta=lon_dir)
+                s4.metric("Time Steps with Centroid", f"{len(df_centroids)} / {len(time_groups)}")
+
+                with st.expander("📋 Full Centroid Table"):
+                    st.dataframe(
+                        df_centroids[['label', 'lat', 'lon']].rename(columns={
+                            'label': 'Period', 'lat': 'Centroid Lat (°N)', 'lon': 'Centroid Lon (°E)'
+                        }).round(4),
+                        hide_index=True,
+                        width="stretch"
+                    )
+        
+        with dyn_tab3:
+            st.caption(
+                "Hotspot coverage (% of valid pixels flagged as hotspots) and centroid position "
+                "summarised at each time step. Use this to spot seasonal or annual patterns."
+            )
+
+            df_coverage = pd.DataFrame(hotspot_counts)
+            df_coverage['pct_hotspot'] = (
+                df_coverage['n_hotspots'] / df_coverage['n_valid'].replace(0, np.nan) * 100
+            )
+            df_coverage = df_coverage.merge(
+                df_centroids[['label', 'lat', 'lon']], on='label', how='left'
+            )
+
+            # Coverage over time bar chart
+            fig_cov = go.Figure()
+            fig_cov.add_trace(go.Bar(
+                x=df_coverage['label'],
+                y=df_coverage['pct_hotspot'],
+                marker_color=dyn_var_info['color'],
+                marker_line_color='black',
+                marker_line_width=0.5,
+                hovertemplate=(
+                    '<b>%{x}</b><br>'
+                    'Hotspot coverage: %{y:.1f}%<br>'
+                    '<extra></extra>'
+                )
+            ))
+            fig_cov.update_layout(
+                title=f'Hotspot Spatial Coverage Over Time — {granularity}',
+                xaxis_title='Time Period',
+                yaxis_title='% of Area as Hotspot',
+                height=350,
+                template='plotly_white',
+                xaxis_tickangle=-45
+            )
+            st.plotly_chart(fig_cov, use_container_width=True, key="coverage_bar")
+
+            # Centroid lat and lon over time
+            if not df_centroids.empty:
+                fig_centroid_ts = go.Figure()
+
+                fig_centroid_ts.add_trace(go.Scatter(
+                    x=df_coverage['label'],
+                    y=df_coverage['lat'],
+                    mode='lines+markers',
+                    name='Centroid Latitude',
+                    line=dict(color='#e377c2', width=2),
+                    marker=dict(size=5),
+                    yaxis='y1'
+                ))
+
+                fig_centroid_ts.add_trace(go.Scatter(
+                    x=df_coverage['label'],
+                    y=df_coverage['lon'],
+                    mode='lines+markers',
+                    name='Centroid Longitude',
+                    line=dict(color='#17becf', width=2, dash='dash'),
+                    marker=dict(size=5),
+                    yaxis='y2'
+                ))
+
+                fig_centroid_ts.update_layout(
+                    title='Centroid Position Over Time',
+                    xaxis_title='Time Period',
+                    yaxis=dict(title='Latitude (°N)', side='left'),
+                    yaxis2=dict(title='Longitude (°E)', side='right', overlaying='y'),
+                    height=350,
+                    template='plotly_white',
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    xaxis_tickangle=-45
+                )
+
+                st.plotly_chart(fig_centroid_ts, use_container_width=True, key="centroid_ts")
+
+            # Summary table
+            st.markdown("**Full Summary Table**")
+            df_display = df_coverage[['label', 'pct_hotspot', 'lat', 'lon']].copy()
+            df_display.columns = ['Period', 'Hotspot Coverage (%)', 'Centroid Lat (°N)', 'Centroid Lon (°E)']
+            df_display = df_display.round(3)
+            st.dataframe(df_display, hide_index=True, use_container_width=True)
+
+            st.download_button(
+                label="📥 Download Hotspot Dynamics Summary",
+                data=df_display.to_csv(index=False),
+                file_name=f"hotspot_dynamics_{dynamics_var}_{granularity.replace(' ', '_')}.csv",
+                mime="text/csv",
+                key="download_dynamics"
+            )
+
+
+        
+
 #Clear memory
 gc.collect()
 
@@ -1289,504 +1732,3 @@ st.markdown("""
     </small>
 </div>
 """, unsafe_allow_html=True)
-
-    # with tabEE:
-
-    #     bloom_extent = []
-        
-    #     for t in range(len(chl_data.time)):
-    #         chl_slice = chl_data.isel(time=t)
-    #         total_pixels = (~np.isnan(chl_slice.values)).sum()
-    #         bloom_pixels = (chl_slice.values > bloom_threshold).sum()
-            
-    #         if total_pixels > 0:
-    #             extent_pct = (bloom_pixels / total_pixels) * 100
-    #         else:
-    #             extent_pct = 0
-            
-    #         bloom_extent.append({
-    #             'time': chl_data.time.values[t],
-    #             'extent_pct': extent_pct,
-    #             'bloom_pixels': int(bloom_pixels),
-    #             'total_pixels': int(total_pixels)
-    #         })
-        
-    #     df_extent = pd.DataFrame(bloom_extent)
-        
-    #     fig_extent = go.Figure()
-        
-    #     fig_extent.add_trace(go.Scatter(
-    #         x=df_extent['time'],
-    #         y=df_extent['extent_pct'],
-    #         mode='lines+markers',
-    #         name='Bloom Extent',
-    #         line=dict(color='#2ca02c', width=2.5),
-    #         marker=dict(size=5),
-    #         fill='tozeroy',
-    #         fillcolor='rgba(44, 160, 44, 0.2)',
-    #         hovertemplate='<b>Date</b>: %{x|%Y-%m-%d}<br>' +
-    #                     '<b>Extent</b>: %{y:.1f}%<br>' +
-    #                     '<extra></extra>'
-    #     ))
-        
-    #     fig_extent.add_hline(
-    #         y=spatial_extent,
-    #         line_dash="dash",
-    #         line_color="red",
-    #         annotation_text=f"Significant extent ({spatial_extent}%)",
-    #         annotation_position="right"
-    #     )
-        
-    #     fig_extent.update_layout(
-    #         title='Percentage of Coastal Area Affected by Blooms',
-    #         xaxis_title='Date',
-    #         yaxis_title='Bloom Extent (%)',
-    #         height=400,
-    #         template='plotly_white'
-    #     )
-        
-    #     st.plotly_chart(fig_extent, width='stretch')
-        
-    #     col1, col2, col3 = st.columns(3)
-        
-    #     with col1:
-    #         avg_extent = df_extent['extent_pct'].mean()
-    #         st.metric("Average Bloom Extent", f"{avg_extent:.1f}%")
-        
-    #     with col2:
-    #         max_extent = df_extent['extent_pct'].max()
-    #         max_extent_date = df_extent.loc[df_extent['extent_pct'].idxmax(), 'time']
-    #         st.metric(
-    #             "Maximum Extent",
-    #             f"{max_extent:.1f}%",
-    #             delta=str(max_extent_date)[:10]
-    #         )
-        
-    #     with col3:
-    #         significant_events = (df_extent['extent_pct'] > spatial_extent).sum()
-    #         st.metric(
-    #             "Significant Events",
-    #             f"{significant_events}",
-    #             delta=f">{spatial_extent}% area"
-    #         )
-
-        
-        
-        
-# with col2:
-#     valid_spatial = data_plot.values[~np.isnan(data_plot.values)]
-#     st.markdown("### 📊 Spatial Statistics")
-#     st.metric("Mean", f"{np.mean(valid_spatial):.2f} {var_info['unit']}")
-#     st.metric("Max", f"{np.max(valid_spatial):.2f} {var_info['unit']}")
-#     st.metric("Min", f"{np.min(valid_spatial):.2f} {var_info['unit']}")
-#     st.metric("Std Dev", f"{np.std(valid_spatial):.2f} {var_info['unit']}")
-#     st.metric("Valid Pixels", f"{len(valid_spatial):,}")
-
-
-# tab1, tab2, tab3, tab4 = st.tabs(["📍 Hotspot Analysis", "📏 Distribution of Parameter Values", "🗺️ Regional Comparison", "🧭Spatial Gradients"])
-
-# with tab1:
-#     st.markdown("## 📍 Hotspot Identification")
-    
-#     col1, col2 = st.columns([1, 2])
-    
-#     with col1:
-#         threshold_pct = st.slider(
-#             "Hotspot Threshold (Percentile)",
-#             min_value=50,
-#             max_value=99,
-#             value=85,
-#             step=5,
-#             help="Values above this percentile will be highlighted as hotspots. Higher percentiles = more exclusive hotspots."
-#         )
-        
-#         threshold_value = np.nanpercentile(data_plot.values, threshold_pct)
-        
-#         st.info(f"**Hotspot threshold: {threshold_value:.2f} {var_info['unit']}** (≥{threshold_pct}th percentile)")
-        
-#         hotspot_mask = data_plot.values >= threshold_value
-#         hotspot_count = np.sum(hotspot_mask & ~np.isnan(data_plot.values))
-#         total_valid_pixels = np.sum(~np.isnan(data_plot.values))
-#         hotspot_percentage = (hotspot_count / total_valid_pixels) * 100 if total_valid_pixels > 0 else 0
-        
-#         st.metric(
-#             label="Hotspot Locations", 
-#             value=f"{hotspot_count:,} pixels",
-#             delta=f"{hotspot_percentage:.1f}% of area"
-#         )
-        
-#         if hotspot_count > 0:
-#             hotspot_values = data_plot.values[hotspot_mask & ~np.isnan(data_plot.values)]
-            
-#             st.markdown("#### Hotspot Statistics")
-#             col_a, col_b = st.columns(2)
-#             with col_a:
-#                 st.metric("Mean", f"{np.mean(hotspot_values):.2f}")
-#                 st.metric("Min", f"{np.min(hotspot_values):.2f}")
-#             with col_b:
-#                 st.metric("Max", f"{np.max(hotspot_values):.2f}")
-#                 st.metric("Std Dev", f"{np.std(hotspot_values):.2f}")
-        
-#         if hotspot_count > 0:
-#             hotspot_lats, hotspot_lons = np.where(hotspot_mask & ~np.isnan(data_plot.values))
-#             hotspot_df = pd.DataFrame({
-#                 'Latitude': data_plot.latitude.values[hotspot_lats],
-#                 'Longitude': data_plot.longitude.values[hotspot_lons],
-#                 var_info['name']: data_plot.values[hotspot_mask & ~np.isnan(data_plot.values)]
-#             })
-            
-#             csv = hotspot_df.to_csv(index=False)
-#             st.download_button(
-#                 label="📥 Download Hotspot Coordinates",
-#                 data=csv,
-#                 file_name=f"hotspots_{selected_var}_{threshold_pct}pct.csv",
-#                 mime="text/csv",
-#                 key="download_hotspots"
-#             )
-    
-#     with col2:
-#         fig_hotspot = go.Figure()
-        
-#         fig_hotspot.add_trace(go.Heatmap(
-#             x=data_plot.longitude.values,
-#             y=data_plot.latitude.values,
-#             z=data_plot.values,
-#             colorscale='Greys',
-#             opacity=0.3,
-#             showscale=False,
-#             hoverinfo='skip',
-#             name='Background'
-#         ))
-        
-#         hotspot_data = np.where(
-#             (data_plot.values >= threshold_value) & ~np.isnan(data_plot.values),
-#             data_plot.values,
-#             np.nan
-#         )
-        
-#         fig_hotspot.add_trace(go.Heatmap(
-#             x=data_plot.longitude.values,
-#             y=data_plot.latitude.values,
-#             z=hotspot_data,
-#             colorscale=[
-#                 [0, '#fee5d9'],
-#                 [0.33, '#fcae91'],
-#                 [0.66, '#fb6a4a'],
-#                 [1, '#cb181d']
-#             ],
-#             colorbar=dict(
-#             title=dict(
-#                 text=f"{var_info['unit']}",
-#                 side='right' 
-#             )
-#         ),
-#             hovertemplate='<b>Lat</b>: %{y:.2f}°N<br>' +
-#                           '<b>Lon</b>: %{x:.2f}°E<br>' +
-#                           f'<b>{var_info["name"]}</b>: %{{z:.2f}} {var_info["unit"]}<br>' +
-#                           '<extra></extra>',
-#             name='Hotspots'
-#         ))
-        
-#         fig_hotspot.update_layout(
-#             title=f'Hotspot Locations (≥{threshold_pct}th percentile)',
-#             xaxis_title='Longitude (°E)',
-#             yaxis_title='Latitude (°N)',
-#             height=500,
-#             template='plotly_white',
-#             showlegend=False
-#         )
-        
-#         st.plotly_chart(fig_hotspot, width='stretch')
-#         if hotspot_count > 0:
-#             hotspot_indices = np.where(hotspot_mask & ~np.isnan(data_plot.values))
-#             hotspot_lats = hotspot_indices[0]
-#             hotspot_lons = hotspot_indices[1]
-            
-#             hotspot_lat_values = data_plot.latitude.values[hotspot_lats]
-#             hotspot_lon_values = data_plot.longitude.values[hotspot_lons]
-            
-#             center_lat = hotspot_lat_values.mean()
-#             center_lon = hotspot_lon_values.mean()
-#             lat_range = np.ptp(hotspot_lat_values)  
-#             lon_range = np.ptp(hotspot_lon_values)  
-            
-#             if lat_range < 2 and lon_range < 2:
-#                 st.success("🎯 Hotspots are **highly concentrated** in one region")
-#             elif lat_range < 5 and lon_range < 5:
-#                 st.info("📍 Hotspots are **moderately dispersed**")
-#             else:
-#                 st.warning("🌍 Hotspots are **widely scattered** across the region")
-
-# with tab4:
-
-#     st.markdown("## 🧭 Spatial Gradients")
-
-#     st.markdown("### Select Data")
-#     available_vars = ["Mean", "Max"]
-#     selected_var = st.selectbox(
-#         "Select Variable",
-#         options=available_vars,
-#         index=0
-#     )
-
-#     if selected_var == "Mean":
-#         lat_profile = data_plot.mean(dim='longitude')
-#         lon_profile = data_plot.mean(dim='latitude')
-#     else:
-#         lat_profile = data_plot.max(dim='longitude')
-#         lon_profile = data_plot.max(dim='latitude')
-        
-#     col1, col2 = st.columns(2)
-
-#     with col1:
-#         fig_lat = go.Figure()
-#         fig_lat.add_trace(go.Scatter(
-#             x=lat_profile.latitude.values,  
-#             y=lat_profile.values,           
-#             mode='lines+markers',
-#             line=dict(color=var_info['color'], width=3),
-#             marker=dict(size=6),
-#             fill='tozeroy', 
-#             fillcolor=f'rgba({int(var_info["color"][1:3], 16)}, {int(var_info["color"][3:5], 16)}, {int(var_info["color"][5:7], 16)}, 0.2)',
-#             hovertemplate='<b>Latitude</b>: %{x:.2f}°N<br>' +
-#                         f'<b>{var_info["name"]}</b>: %{{y:.2f}} {var_info["unit"]}<br>' +
-#                         '<extra></extra>'
-#         ))
-
-#         # Add a vrect for each region's latitude range
-#         for region_name, bounds in BALTIC_REGIONS.items():
-#             fig_lat.add_vrect(
-#                 x0=bounds['min_lat'],
-#                 x1=bounds['max_lat'],
-#                 annotation_text=region_name,
-#                 annotation_position="top left",
-#                 annotation=dict(
-#                     textangle=-90,
-#                     font=dict(size=9),
-#                 ),
-#                 fillcolor=bounds['color'],
-#                 opacity=0.1,
-#                 line_width=1,
-#                 line_color=bounds['color'],
-#             )
-        
-#         fig_lat.update_layout(
-#             title=f'Latitudinal Profile (South to North) — {selected_var}',
-#             xaxis_title='Latitude (°N)', 
-#             yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',  
-#             height=400,
-#             template='plotly_white',
-#             showlegend=False
-#         )
-            
-#         st.plotly_chart(fig_lat, width='stretch')
-
-#     with col2:
-#         fig_lon = go.Figure()
-#         fig_lon.add_trace(go.Scatter(
-#             x=lon_profile.longitude.values,
-#             y=lon_profile.values,
-#             mode='lines+markers',
-#             line=dict(color=var_info['color'], width=3),
-#             marker=dict(size=6),
-#             fill='tozeroy',
-#             fillcolor=f'rgba({int(var_info["color"][1:3], 16)}, {int(var_info["color"][3:5], 16)}, {int(var_info["color"][5:7], 16)}, 0.2)',
-#             hovertemplate='<b>Longitude</b>: %{x:.2f}°E<br>' +
-#                         f'<b>{var_info["name"]}</b>: %{{y:.2f}} {var_info["unit"]}<br>' +
-#                         '<extra></extra>'
-#         ))
-
-#         # Add a vrect for each region's longitude range
-#         for region_name, bounds in BALTIC_REGIONS.items():
-#             fig_lon.add_vrect(
-#                 x0=bounds['min_lon'],
-#                 x1=bounds['max_lon'],
-#                 annotation_text=region_name,
-#                 annotation_position="top left",
-#                 annotation=dict(
-#                     textangle=-90,
-#                     font=dict(size=9),
-#                 ),
-#                 fillcolor=bounds['color'],
-#                 opacity=0.1,
-#                 line_width=1,
-#                 line_color=bounds['color'],
-#             )
-        
-#         fig_lon.update_layout(
-#             title=f'Longitudinal Profile (West to East) — {selected_var}',
-#             xaxis_title='Longitude (°E)',
-#             yaxis_title=f'{var_info["name"]} ({var_info["unit"]})',
-#             height=400,
-#             template='plotly_white',
-#             showlegend=False
-#         )
-        
-#         st.plotly_chart(fig_lon, width='stretch')
-        
-#     max_lat_idx = lat_profile.argmax()
-#     peak_lat = float(lat_profile.latitude.values[max_lat_idx])
-#     peak_max_lat = float(lat_profile.max())
-
-#     max_lon_idx = lon_profile.argmax()
-#     peak_lon = float(lon_profile.longitude.values[max_lon_idx])
-#     peak_max_lon = float(lon_profile.max())
-
-#     overall_val = float(data_plot.mean()) if selected_var == "Mean" else float(data_plot.max())
-
-#     col1, col2, col3 = st.columns(3)
-#     with col1:
-#         st.metric(
-#             label=f"Overall {selected_var}",
-#             value=f"{overall_val:.2f} {var_info['unit']}",
-#         )
-
-#     with col2:
-#         st.metric(
-#             label=f"Peak Latitude ({selected_var})",
-#             value=f"{peak_max_lat:.2f} {var_info['unit']}",
-#             delta=f"at {peak_lat:.2f}°N"
-#         )
-
-#     with col3:
-#         st.metric(
-#             label=f"Peak Longitude ({selected_var})",
-#             value=f"{peak_max_lon:.2f} {var_info['unit']}",
-#             delta=f"at {peak_lon:.2f}°E"
-#         )
-        
-
-
-# with tab2:
-#     st.markdown("## 🌡️ Bloom-Favorable Environmental Conditions")
-#     with st.expander("🔍 What conditions promote algae blooms?"):
-#         st.info("""
-#         Algae blooms typically occur when multiple favorable conditions coincide:
-#         - **Chlorophyll**: > threshold (bloom indicator)
-#         - **Temperature**: > 15°C (warmer water promotes growth)
-#         - **Solar Radiation**: High (more light for photosynthesis)
-#         - **Nutrients**: Sufficient nitrate and phosphate (growth nutrients)
-#         - **Wind**: Low to moderate (< 7 m/s, allows water stratification)
-#         """)
-
-
-    
-#     favorable_conditions = {}
-
-#     if temp_data is not None:
-#         temp_mean = temp_data.mean(dim=['latitude', 'longitude'])
-#         temp_favorable = temp_mean > 15
-#         favorable_conditions['Temperature (>15°C)'] = temp_favorable
-#     else:
-#         temp_favorable = None
-
-#     if wind_data is not None:
-#         wind_mean = wind_data.mean(dim=['latitude', 'longitude'])
-#         wind_favorable = wind_mean < 7
-#         favorable_conditions['Wind (<7 m/s)'] = wind_favorable
-#     else:
-#         wind_favorable = None
-
-#     if solar_data is not None:
-#         solar_mean = solar_data.mean(dim=['latitude', 'longitude'])
-#         solar_median = float(solar_mean.median())
-#         solar_favorable = solar_mean > solar_median
-#         favorable_conditions['Solar (>median)'] = solar_favorable
-#     else:
-#         solar_favorable = None
-
-#     if len(favorable_conditions) > 0:
-#         all_times = [chl_mean.time.values]
-#         for condition in favorable_conditions.values():
-#             all_times.append(condition.time.values)
-        
-#         common_times = all_times[0]
-#         for times in all_times[1:]:
-#             common_times = np.intersect1d(common_times, times)
-        
-#         if len(common_times) > 0:
-#             bloom_aligned = chl_mean.sel(time=common_times) > bloom_threshold
-            
-#             conditions_aligned = {}
-#             for name, condition in favorable_conditions.items():
-#                 conditions_aligned[name] = condition.sel(time=common_times)
-            
-#             n_favorable = sum(conditions_aligned.values())
-            
-#             all_favorable = bloom_aligned.copy()
-#             for condition in conditions_aligned.values():
-#                 all_favorable = all_favorable & condition
-            
-#             n_all_favorable = all_favorable.sum().values
-            
-#             st.markdown("### 📊 Favorable Condition Frequency")
-            
-#             cols = st.columns(len(favorable_conditions) + 1)
-            
-#             for idx, (name, condition) in enumerate(favorable_conditions.items()):
-#                 with cols[idx]:
-#                     n_times = conditions_aligned[name].sum().values
-#                     pct = (n_times / len(common_times)) * 100
-#                     st.metric(
-#                         label=name,
-#                         value=f"{n_times} months",
-#                         delta=f"{pct:.1f}%"
-#                     )
-            
-#             with cols[-1]:
-#                 pct_all = (n_all_favorable / len(common_times)) * 100
-#                 st.metric(
-#                     label="All Conditions Met",
-#                     value=f"{n_all_favorable} months",
-#                     delta=f"{pct_all:.1f}%"
-#                 )
-            
-#             bloom_with_favorable = bloom_aligned & all_favorable
-#             n_bloom_with_favorable = bloom_with_favorable.sum().values
-            
-#             if n_bloom_months > 0:
-#                 coincidence_rate = (n_bloom_with_favorable / n_bloom_months) * 100
-                
-#                 st.markdown("### 🎯 Bloom-Condition Coincidence")
-                
-#                 col1, col2, col3 = st.columns(3)
-                
-#                 with col1:
-#                     st.metric(
-#                         label="Blooms with Favorable Conditions",
-#                         value=f"{n_bloom_with_favorable} / {n_bloom_months}",
-#                         delta=f"{coincidence_rate:.1f}%"
-#                     )
-                
-#                 with col2:
-#                     blooms_without = n_bloom_months - n_bloom_with_favorable
-#                     st.metric(
-#                         label="Blooms w/o Favorable Conditions",
-#                         value=f"{blooms_without}",
-#                         delta="Unexpected blooms"
-#                     )
-                
-#                 with col3:
-#                     favorable_no_bloom = all_favorable & ~bloom_aligned
-#                     n_favorable_no_bloom = favorable_no_bloom.sum().values
-#                     st.metric(
-#                         label="Favorable w/o Blooms",
-#                         value=f"{n_favorable_no_bloom}",
-#                         delta="Missed opportunities"
-#                     )
-                
-#                 if coincidence_rate > 70:
-#                     st.success(f"✅ High coincidence rate ({coincidence_rate:.1f}%)! Environmental conditions are strong predictors of blooms.")
-#                 elif coincidence_rate > 40:
-#                     st.info(f"ℹ️ Moderate coincidence rate ({coincidence_rate:.1f}%). Environmental conditions partially explain blooms.")
-#                 else:
-#                     st.warning(f"⚠️ Low coincidence rate ({coincidence_rate:.1f}%). Other factors may be important.")
-
-# st.markdown("---")
-
-# with tab2:
-#     st.markdown("### Seasonal Bloom Distribution")
-    
-
-# with tab3:
-

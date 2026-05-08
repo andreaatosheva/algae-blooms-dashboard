@@ -4,7 +4,7 @@ import streamlit as st
 import plotly.graph_objects as go
 
 
-def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='smooth'):
+def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='smooth', log_scale=False):
     """
     Create smooth map with interpolation for low-resolution data
     
@@ -22,7 +22,16 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
     # Get data
     lons = data_plot.longitude.values
     lats = data_plot.latitude.values
-    values = data_plot.values
+    values_original = data_plot.values.copy()
+    
+    if log_scale:
+        values_display = np.log1p(values_original)  # log(1 + x) to handle zeros and small values
+        colorbar_title = f"{var_info['name']}<br>(log scale, {var_info['unit']})"
+    
+    else:
+        values_display = values_original
+        colorbar_title = f"{var_info['name']}<br>({var_info['unit']})"
+    
     
     # Create mesh
     lon_mesh, lat_mesh = np.meshgrid(lons, lats)
@@ -30,7 +39,8 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
     # Flatten
     lon_flat = lon_mesh.flatten()
     lat_flat = lat_mesh.flatten()
-    val_flat = values.flatten()
+    val_flat = values_display.flatten()
+    val_original_flat = values_original.flatten()
     
     # Remove NaN
     valid_mask = ~np.isnan(val_flat)
@@ -58,6 +68,14 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
             fill_value=np.nan
         )
         
+        val_original_interp = griddata(
+            (lon_flat[valid_mask], lat_flat[valid_mask]),
+            val_original_flat[valid_mask],
+            (lon_fine_mesh, lat_fine_mesh),
+            method='cubic',
+            fill_value=np.nan
+        )
+        
         # Create smooth heatmap
         fig = go.Figure()
         
@@ -65,6 +83,7 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
             x=lon_fine,
             y=lat_fine,
             z=val_interp,
+            customdata=val_original_interp,  # Use original values for hover
             colorscale=var_info['cmap'],
             colorbar=dict(
                 title=dict(text=f"{var_info['name']}<br>({var_info['unit']})", side='right'),
@@ -73,7 +92,7 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
             ),
             hovertemplate='<b>Lat</b>: %{y:.2f}°N<br>' +
                           '<b>Lon</b>: %{x:.2f}°E<br>' +
-                          f'<b>{var_info["name"]}</b>: %{{z:.2f}} {var_info["unit"]}<br>' +
+                          f'<b>{var_info["name"]}</b>: %{{customdata:.2f}} {var_info["unit"]}<br>' +
                           '<extra></extra>',
             zsmooth='best'
         ))
@@ -84,13 +103,18 @@ def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='s
         fig.add_trace(go.Heatmap(
             x=lons,
             y=lats,
-            z=values,
+            z=values_display,
+            customdata=values_original,  # Use original values for hover
             colorscale=var_info['cmap'],
             colorbar=dict(
                 title=dict(text=f"{var_info['name']}<br>({var_info['unit']})", side='right'),
                 thickness=20,
                 len=0.7
             ),
+            hovertemplate='<b>Lat</b>: %{y:.2f}°N<br>' +
+                          '<b>Lon</b>: %{x:.2f}°E<br>' +
+                          f'<b>{var_info["name"]}</b>: %{{customdata:.2f}} {var_info["unit"]}<br>' +
+                          '<extra></extra>',
             zsmooth='best'
         ))
     
