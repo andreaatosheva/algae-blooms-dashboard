@@ -1,5 +1,6 @@
 import streamlit as st
 import sys
+from plotly.subplots import make_subplots
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -324,17 +325,13 @@ with tab4:
         
         progress = st.progress(0, text="Running predictions...")
         
-        all_window_preds = []
-        all_window_actuals = []
-        all_window_labels = []
-        failed_window = []
+        daily_results = []
         
         for w_idx, window in enumerate(windows):
             try:
                 first_day_idx = np.where(all_dates == window[0])[0][0]
                 
                 if first_day_idx < 3:
-                    failed_window.append((w_idx, "Not enough previous data for 3-day input"))
                     continue
                     
                 past_features = []
@@ -350,11 +347,7 @@ with tab4:
                 x_tensor = torch.FloatTensor(x).unsqueeze(0).to(device)
                 with torch.no_grad():
                     pred_norm_all = model_taunet(x_tensor).cpu().numpy()[0]
-                    
-                window_preds = []
-                window_actuals = []
-                window_labels = []
-                
+
                 for d, future_date in enumerate(window):
                     features_future, day_idx_future, _ = get_features_for_date(future_date, all_dates)
                     if features_future is None:
@@ -369,49 +362,142 @@ with tab4:
                     pred_real = denormalise_chl(pred_norm_all[d], norm_stats)
                     pred_real[actual_land_mask] = np.nan
                     
-                    window_preds.append(pred_real)
-                    window_actuals.append(actual_real)
-                    window_labels.append(f"{future_date.strftime('%d %b %Y')}")
+                    daily_results.append({
+                        "date": future_date,
+                        "pred": pred_real,
+                        "actual": actual_real
+                    })
                     
-                all_window_preds.append(window_preds)
-                all_window_actuals.append(window_actuals)
-                all_window_labels.append(window_labels)
             except Exception as e:
-                failed_window.append((w_idx, str(e)))
                 st.warning(f"Window {w_idx} failed: {e}")
             
             progress.progress((w_idx + 1) / len(windows), text=f"Running predictions... (Window {w_idx+1}/{len(windows)})")
             
         progress.empty()
         
-        if not all_window_preds:
+        if not daily_results:
             st.error("All prediction windows failed. Please check the error messages above.")
             st.stop()
-            
+        
+        st.markdown(f"**{len(daily_results)} days** predicted for "
+                    f"{pd.Timestamp(selected_year, selected_month, 1).strftime('%B %Y')}")
+
+        
         st.markdown("---")
         
-        for w_idx, (preds, actuals, labels) in enumerate(
-            zip(all_window_preds, all_window_actuals, all_window_labels)
-        ):
-            with st.expander(f"**Window {w_idx+1}** - {labels[0]} -> {labels[-1]}", expanded=(w_idx==0)):
+        n_frames = len(daily_results)
+        first = daily_results[0]
+        H, W = first['actual'].shape
+        zmin, zmax = 0, 10
+        
+        def to_list(arr):
+            return [[None if np.isnan(x) else float(x) for x in row] for row in arr]
+        
+        fig = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=["Actual CHL", "Predicted CHL"],
+            horizontal_spacing=0.08
+        )
+        
+        fig.add_trace(
+            go.Heatmap(
+                z=to_list(first['actual']),
+                zmin=zmin, zmax=zmax,
+                colorscale='Viridis',
+                colorbar=dict(title='mg/m³', x=0.45),
+                hovertemplate='<b>Actual</b>: %{z:.2f} mg/m³<extra></extra>'
                 
-                for d in range(len(labels)):
-                    st.markdown(f"##### {labels[d]}")
-                    col1, col2, col3 = st.columns([2, 2, 2])
-                    with col1:
-                        st.plotly_chart(make_map(np.where(np.isnan(actuals[d]), None, actuals[d]), f"Actual CHL ({labels[d]})"),
-                                        use_container_width=True, key=f"actual_{w_idx}_{d}")
-                        
-                    with col2:
-                        st.plotly_chart(make_map(np.where(np.isnan(preds[d]), None, preds[d]), f"Predicted CHL ({labels[d]})"),
-                                        use_container_width=True, key=f"pred_{w_idx}_{d}")
-                        
-                    with col3:
-                        diff = preds[d] - actuals[d]
-                        st.plotly_chart(make_map(np.where(np.isnan(diff), None, diff),
-                                                 f"Difference (Pred - Actual) ({labels[d]})",
-                                                 colorscale='RdBu_r', zmin=-5, zmax=5, zmid=0),
-                                        use_container_width=True, key=f"diff_{w_idx}_{d}")
+            ),
+            row=1, col=1
+        )
+        
+        fig.add_trace(
+            go.Heatmap(
+                z=to_list(first['pred']),
+                zmin=zmin, zmax=zmax,
+                colorscale='Viridis',
+                colorbar=dict(title='mg/m³', x=1.0),
+                hovertemplate='<b>Predicted</b>: %{z:.2f} mg/m³<extra></extra>'
+            ),
+            row=1, col=2
+        )
+        
+        frames = []
+        
+        for r in daily_results:
+            frames.append(go.Frame(
+                data = [
+                    go.Heatmap(z=to_list(r["actual"])),
+                    go.Heatmap(z=to_list(r["pred"]))
+                ],
+                name=pd.Timestamp(r["date"]).strftime('%d %b %Y'),
+                layout=go.Layout(title_text=f"CHL — {pd.Timestamp(r['date']).strftime('%d %b %Y')}")
+            ))
+        fig.frames = frames
+        
+        slider_steps = [
+        dict(
+            args=[[f["name"]], dict(
+                frame = dict(duration=500, redraw=True),
+                mode = "immediate",
+                transition = dict(duration=300)
+            )],
+            label=f["name"],
+            method = "animate"
+        )
+        for f in frames
+        ]
+        
+        fig.update_layout(
+            title=f"CHL Forecast - {pd.Timestamp(selected_year, selected_month, 1).strftime('%B %Y')}",
+            height = 550,
+            template = "plotly_white",
+            margin = dict(l=0, r=0, t=60, b=120),
+            updatemenus = [dict(
+                type="buttons",
+                showactive=False,
+                y=-0.12,
+                x=0.00,
+                xanchor="left",
+                yanchor = "top",
+                direction="right",
+                buttons=[
+                    dict(label="Play",
+                        method="animate",
+                        args=[None, dict(
+                            frame=dict(duration=600, redraw=True),
+                            fromcurrent=True,
+                            transition=dict(duration=300)
+                        )]),
+                    dict(label="Pause",
+                        method="animate",
+                        args=[[None], dict(
+                            frame=dict(duration=0, redraw=False),
+                            mode="immediate",
+                            transition=dict(duration=0)
+                        )])
+                ]
+            )],
             
-            if failed_window:
-                st.warning(f"Could not load windows: {[w+1 for w in failed_window]}")
+            sliders = [dict(
+                active=0,
+                steps=slider_steps,
+                x=0.0, y=-0.08,
+                len = 1.0,
+                currentvalue=dict(
+                    prefix="Date: ",
+                    visible=True,
+                    xanchor="center",
+                    font=dict(size=13)
+                ),
+                transition=dict(duration=300)
+            )]
+        )
+        
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False)
+        
+        st.plotly_chart(fig, use_container_width=True, key="monthly_forecast_animation")
+        
+    else:
+        st.info("Select a year and month, then click 'Run Monthly Forecast' to view results.")
