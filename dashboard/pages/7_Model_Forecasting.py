@@ -50,7 +50,7 @@ all_dates = pd.to_datetime(times)
 test_dates_sameday = pd.to_datetime(times[test_idx_sameday])
 test_dates_forecast = pd.to_datetime(times[test_idx_forecast])
 
-tab1, tab2, tab3 = st.tabs(["Sameday Predictions", "1 day Forecast Predictions", "3 days Forecast Predictions"])
+tab1, tab2, tab3, tab4 = st.tabs(["Sameday Predictions", "1 day Forecast Predictions", "3 days Forecast Predictions", "Monthly CHL forecast"])
 
 with tab1:
     st.markdown("### Settings")
@@ -279,3 +279,139 @@ with tab3:
                                 use_container_width=True)
     else:
         st.info("Select a date and click 'Run Prediction' to view results.")
+        
+with tab4:
+    st.markdown("### Monthly Chlorophyll Forecast")
+    
+    col_y, col_m = st.columns(2)
+    with col_y:
+        selected_year = st.selectbox(
+            "Select Year",
+            options=sorted(all_dates.year.unique()),
+            index=0,
+            key="monthly_forecast_year"
+        )
+    with col_m:
+        selected_month = st.selectbox(
+            "Select Month",
+            options=list(range(1, 13)),
+            format_func=lambda x: pd.Timestamp(2000, x, 1).strftime("%B"),
+            index=0,
+            key="monthly_forecast_month"
+        )
+    
+    if st.button("Run Monthly Forecast", key="monthly_forecast_run_button"):
+        month_mask = (all_dates.year == selected_year) & (all_dates.month == selected_month)
+        month_dates = all_dates[month_mask]
+        
+        if len(month_dates) == 0:
+            st.error("No data available for the selected month and year.")
+            st.stop()
+            
+        windows = []
+        i = 0
+        while i + 2 < len(month_dates):
+            window_dates = month_dates[i:i+3]
+            windows.append(window_dates)
+            i += 3
+        
+        if len(windows) == 0:
+            st.error("Not enough data to create 3-day windows for the selected month.")
+            st.stop()
+            
+        st.markdown(f"**{len(windows)} prediction windows** for "
+                    f"{pd.Timestamp(selected_year, selected_month, 1).strftime('%B %Y')}")
+        
+        progress = st.progress(0, text="Running predictions...")
+        
+        all_window_preds = []
+        all_window_actuals = []
+        all_window_labels = []
+        failed_window = []
+        
+        for w_idx, window in enumerate(windows):
+            try:
+                first_day_idx = np.where(all_dates == window[0])[0][0]
+                
+                if first_day_idx < 3:
+                    failed_window.append((w_idx, "Not enough previous data for 3-day input"))
+                    continue
+                    
+                past_features = []
+                for offset in [3, 2, 1]:
+                    past_date = all_dates[first_day_idx - offset]
+                    feats, day_idx, _ = get_features_for_date(past_date, all_dates)
+                    if feats is None:
+                        raise ValueError(f"Features for {past_date} could not be loaded.")
+                    past_features.append(feats[day_idx])
+                x_input = np.concatenate(past_features, axis=0)
+                
+                x = np.nan_to_num(x_input, nan=0.0)
+                x_tensor = torch.FloatTensor(x).unsqueeze(0).to(device)
+                with torch.no_grad():
+                    pred_norm_all = model_taunet(x_tensor).cpu().numpy()[0]
+                    
+                window_preds = []
+                window_actuals = []
+                window_labels = []
+                
+                for d, future_date in enumerate(window):
+                    features_future, day_idx_future, _ = get_features_for_date(future_date, all_dates)
+                    if features_future is None:
+                        raise ValueError(f"Features for {future_date} could not be loaded.")
+                    
+                    actual_norm = features_future[day_idx_future, 0, :, :]
+                    actual_land_mask = np.isnan(actual_norm)
+                    
+                    actual_real = denormalise_chl(actual_norm, norm_stats)
+                    actual_real[actual_land_mask] = np.nan
+                    
+                    pred_real = denormalise_chl(pred_norm_all[d], norm_stats)
+                    pred_real[actual_land_mask] = np.nan
+                    
+                    window_preds.append(pred_real)
+                    window_actuals.append(actual_real)
+                    window_labels.append(f"{future_date.strftime('%d %b %Y')}")
+                    
+                all_window_preds.append(window_preds)
+                all_window_actuals.append(window_actuals)
+                all_window_labels.append(window_labels)
+            except Exception as e:
+                failed_window.append((w_idx, str(e)))
+                st.warning(f"Window {w_idx} failed: {e}")
+            
+            progress.progress((w_idx + 1) / len(windows), text=f"Running predictions... (Window {w_idx+1}/{len(windows)})")
+            
+        progress.empty()
+        
+        if not all_window_preds:
+            st.error("All prediction windows failed. Please check the error messages above.")
+            st.stop()
+            
+        st.markdown("---")
+        
+        for w_idx, (preds, actuals, labels) in enumerate(
+            zip(all_window_preds, all_window_actuals, all_window_labels)
+        ):
+            with st.expander(f"**Window {w_idx+1}** - {labels[0]} -> {labels[-1]}", expanded=(w_idx==0)):
+                
+                for d in range(len(labels)):
+                    st.markdown(f"##### {labels[d]}")
+                    col1, col2, col3 = st.columns([2, 2, 2])
+                    with col1:
+                        st.plotly_chart(make_map(np.where(np.isnan(actuals[d]), None, actuals[d]), f"Actual CHL ({labels[d]})"),
+                                        use_container_width=True, key=f"actual_{w_idx}_{d}")
+                        
+                    with col2:
+                        st.plotly_chart(make_map(np.where(np.isnan(preds[d]), None, preds[d]), f"Predicted CHL ({labels[d]})"),
+                                        use_container_width=True, key=f"pred_{w_idx}_{d}")
+                        
+                    with col3:
+                        diff = preds[d] - actuals[d]
+                        st.plotly_chart(make_map(np.where(np.isnan(diff), None, diff),
+                                                 f"Difference (Pred - Actual) ({labels[d]})",
+                                                 colorscale='RdBu_r', zmin=-5, zmax=5, zmid=0),
+                                        use_container_width=True, key=f"diff_{w_idx}_{d}")
+            
+            if failed_window:
+                st.warning(f"Could not load windows: {[w+1 for w in failed_window]}")
