@@ -2,7 +2,7 @@ import numpy as np
 from scipy.interpolate import griddata
 import streamlit as st
 import plotly.graph_objects as go
-
+import pandas as pd
 
 def create_smooth_interpolated_map(data_plot, var_info, time_label, map_style='smooth', log_scale=False):
     """
@@ -195,3 +195,73 @@ def create_scatter_bubble_map(data_plot, var_info, time_label):
     )
     
     return fig
+
+
+
+def render_date_controls(
+    all_dates: pd.DatetimeIndex,
+    fallback_dates: pd.DatetimeIndex,
+    key_prefix: str,
+) -> pd.Timestamp:
+    """
+    Render the date-filter radio + date selectbox that appear in every tab.
+
+    Parameters
+    ----------
+    all_dates       : Full date range (2014-2024).
+    fallback_dates  : Test-set dates shown when the user picks "Test set only".
+    key_prefix      : Unique string prefix for Streamlit widget keys.
+
+    Returns
+    -------
+    The selected pd.Timestamp.
+    """
+    date_filter = st.radio(
+        "**Date Range**",
+        options=["All dates (2014-2024)", "Test set only (unseen by model)"],
+        help=(
+            "Test set dates were never seen during training — metrics on these "
+            "dates are the most reliable indicator of real model performance"
+        ),
+        key=f"{key_prefix}_date_filter",
+    )
+    selected_dates = all_dates if date_filter == "All dates (2014-2024)" else fallback_dates
+    
+    return st.selectbox(
+        "Select a date to view predictions",
+        options=selected_dates,
+        format_func=lambda x: x.strftime("%Y-%m-%d"),
+        index=0,
+        key=f"{key_prefix}_date_selectbox",
+    )
+    
+
+def render_month_year_controls(
+    all_dates: pd.DatetimeIndex,
+    key_prefix: str,
+) -> tuple[int, int]:
+    """
+    Render the year + month selector columns used in monthly forecast expanders.
+
+    Returns
+    -------
+    (selected_year, selected_month) as ints.
+    """
+    col_y, col_m = st.columns(2)
+    with col_y:
+        selected_year = st.selectbox(
+            "Select Year",
+            options=sorted(all_dates.year.unique()),
+            index=0,
+            key=f"{key_prefix}_year",
+        )
+    with col_m:
+        selected_month = st.selectbox(
+            "Select Month",
+            options=list(range(1, 13)),
+            format_func=lambda x: pd.Timestamp(2000, x, 1).strftime("%B"),
+            index=0,
+            key=f"{key_prefix}_month",
+        )
+    return selected_year, selected_month
+
