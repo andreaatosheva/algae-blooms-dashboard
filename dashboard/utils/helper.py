@@ -532,17 +532,39 @@ def run_prediction(model, x_input, device):
     
     return pred
 
-def make_map(data, title, colorscale='Viridis', zmin=0, zmax=10, zmid=None):
+def make_map(data, title, colorscale='Viridis', zmin=0, zmax=None, zmid=None, log_scale=True):
+    if log_scale:
+        plot_data = np.log1p(np.clip(data, 0, None))
+        tick_vals_real = [0, 1, 2.5, 5, 10, 20]
+        tick_vals_log  = [np.log1p(v) for v in tick_vals_real]
+        tick_labels    = [str(v) for v in tick_vals_real]
+        colorbar = dict(
+            title='mg/m³',
+            tickvals=tick_vals_log,
+            ticktext=tick_labels,
+        )
+        plot_zmin = np.log1p(zmin) if zmin is not None else None
+        plot_zmax = np.log1p(zmax) if zmax is not None else None
+        plot_zmid = None
+        
+    else:
+        plot_data = data
+        colorbar = dict(title='mg/m³')
+        plot_zmin = zmin
+        plot_zmax = zmax
+        plot_zmid = zmid
+        
     fig = go.Figure()
     
     fig.add_trace(go.Heatmap(
-        z=data,
+        z=plot_data,
+        customdata = data,
         colorscale=colorscale,
-        zmin=zmin,
-        zmax=zmax,
-        zmid=zmid,
-        colorbar=dict(title='mg/m³'),
-        hovertemplate='<b>Value</b>: %{z:.2f} mg/m³<extra></extra>'
+        zmin=plot_zmin,
+        zmax=plot_zmax,
+        zmid=plot_zmid,
+        colorbar=colorbar,
+        hovertemplate='<b>Value</b>: %{customdata:.2f} mg/m³<extra></extra>'
     ))
     
     fig.update_layout(
@@ -568,6 +590,7 @@ def render_prediction_columns(
     predicted   : Denormalised predicted CHL array (NaN on land).
     date_label  : Human-readable date string used in plot titles.
     """
+
     col1, col2, col3 = st.columns([2, 2, 2])
     with col1:
         st.plotly_chart(
@@ -588,6 +611,7 @@ def render_prediction_columns(
                 zmin=-5,
                 zmax=5,
                 zmid=0,
+                log_scale=False
             ),
             width="stretch",
         )
@@ -951,10 +975,6 @@ def run_seven_day_forecast_prediction(
     render_multiday_prediction_columns(actual_days, pred_days, all_dates, global_idx)
 
 
-# ---------------------------------------------------------------------------
-# Monthly forecast runners (shared logic for 1-day / 3-day / 7-day expanders)
-# ---------------------------------------------------------------------------
-
 def run_monthly_forecast(
     selected_year: int,
     selected_month: int,
@@ -983,7 +1003,6 @@ def run_monthly_forecast(
         return
 
     if window_size == 1:
-        # Each day in the month is its own "window"; we predict day+1
         windows = [[d] for d in month_dates[:-1]]
     else:
         windows = []
