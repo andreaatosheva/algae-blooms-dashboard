@@ -19,7 +19,7 @@ from utils.helper import show_memory_usage
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import VARIABLE_INFO, SEASONS, SEASON_COLORS
-from utils.data_loader import load_dataset, get_variable_data
+from utils.data_loader import load_dataset, get_variable_data, load_variable_data
 
 # Page config
 st.set_page_config(
@@ -31,20 +31,6 @@ st.set_page_config(
 st.title("📉 Statistical Analysis")
 st.markdown("Comprehensive statistical analysis and correlations between environmental variables.")
 
-show_memory_usage()
-
-@st.cache_data
-def load_variable_data(var_name):
-    """Load data for selected variable"""
-    if var_name in ['nitrate', 'phosphate', 'ammonia']:
-        ds = load_dataset('nutrients')
-    else:
-        ds = load_dataset(var_name)
-    
-    if ds is None:
-        return None
-    
-    return get_variable_data(ds, var_name)
 
 st.markdown("### Select Variable for Analysis")
 

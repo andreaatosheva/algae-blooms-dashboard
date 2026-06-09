@@ -172,7 +172,7 @@ def main():
             <strong>🌊 Copernicus Marine Service</strong><br>
             Provides ocean variables including chlorophyll-a, sea surface
             temperature, and nutrient concentrations derived from satellite
-            and in-situ observations.<br><br>
+            observations.<br><br>
             <a href="https://data.marine.copernicus.eu" target="_blank">
                 🔗 data.marine.copernicus.eu
             </a>

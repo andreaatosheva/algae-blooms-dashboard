@@ -83,7 +83,7 @@ with tab2:
     with st.expander("Monthly Chlorophyll Forecast with 1 day prediction windows"):
         st.markdown("### Monthly 1-day Chlorophyll Forecast")
         
-        selected_year, selected_month = render_month_year_controls(all_dates, "monthly_forecast_1day")
+        selected_ts = render_month_year_controls(all_dates, "monthly_forecast_1day")
         
         if st.button("Run Monthly Forecast", key="monthly_forecast_run_button_1day"):
             model_forecast, device = load_one_day_forecast_model()
@@ -92,8 +92,8 @@ with tab2:
                 st.stop()
                 
             run_monthly_forecast(
-                selected_year=selected_year,
-                selected_month=selected_month,
+                selected_year=selected_ts.year,
+                selected_month=selected_ts.month,
                 all_dates=all_dates,
                 norm_stats=norm_stats,
                 model=model_forecast,
@@ -129,14 +129,14 @@ with tab3:
     with st.expander("Monthly Chlorophyll Forecast with 3 day prediction windows"):
         st.markdown("### Monthly Chlorophyll Forecast")
         
-        selected_year, selected_month = render_month_year_controls(all_dates, "monthly_forecast_3day")
+        selected_ts = render_month_year_controls(all_dates, "monthly_forecast_3day")
         
         if st.button("Run Monthly Forecast", key="monthly_forecast_run_button"):
             model_taunet, device = load_three_days_forecast_model()
             if model_taunet is None:
                 st.error("Error loading three-day forecast model.")
                 st.stop()
-            month_mask = (all_dates.year == selected_year) & (all_dates.month == selected_month)
+            month_mask = (all_dates.year == selected_ts.year) & (all_dates.month == selected_ts.month)
             month_dates = all_dates[month_mask]
             
             if len(month_dates) == 0:
@@ -144,8 +144,8 @@ with tab3:
                 st.stop()
                 
             run_monthly_forecast(
-                selected_year=selected_year,
-                selected_month=selected_month,
+                selected_year=selected_ts.year,
+                selected_month=selected_ts.month,
                 all_dates=all_dates,
                 norm_stats=norm_stats,
                 model=model_taunet,
@@ -179,7 +179,7 @@ with tab4:
     with st.expander("Monthly Chlorophyll Forecast with 7 day prediction windows"):
         st.markdown("### Monthly Chlorophyll Forecast")
         
-        selected_year, selected_month = render_month_year_controls(all_dates, "monthly_forecast_7day")
+        selected_ts = render_month_year_controls(all_dates, "monthly_forecast_7day")
         
         if st.button("Run Monthly Forecast", key="monthly_forecast_run_button_7day"):
             model_seven_days, device = load_seven_days_forecast_model()
@@ -188,8 +188,8 @@ with tab4:
                 st.stop()
             
             run_monthly_forecast(
-                selected_year=selected_year,
-                selected_month=selected_month,
+                selected_year=selected_ts.year,
+                selected_month=selected_ts.month,
                 all_dates=all_dates,
                 norm_stats=norm_stats,
                 model=model_seven_days,

@@ -13,7 +13,7 @@ import gc
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import VARIABLE_INFO, SEASONS, SEASON_COLORS
-from utils.data_loader import load_dataset, get_variable_data
+from utils.data_loader import load_dataset, get_variable_data, load_variable_data
 
 st.set_page_config(
     page_title="Time Series Analysis",
@@ -23,18 +23,6 @@ st.set_page_config(
 
 st.title("📈 Time Series Analysis")
 st.markdown("Analyze temporal trends, seasonality, and patterns over time")
-
-show_memory_usage()
-
-@st.cache_data
-def load_variable_data(variable_key):
-    if variable_key in ["nitrate", "phosphate", "ammonia"]:
-        dataset = load_dataset("nutrients")
-    else:
-        dataset = load_dataset(variable_key)
-    if dataset is not None:
-        return get_variable_data(dataset, variable_key)
-    return None
 
 
 col1, col2 = st.columns(2, gap="xxsmall", border=True)

@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
 from utils.helper import show_memory_usage
+from utils.data_loader import load_variable_data
 import gc
 
 
@@ -39,23 +40,6 @@ st.markdown("""
 
 st.title("🔍 Data Explorer")
 st.markdown("Explore and visualize the datasets used in the Algae Bloom Dashboard.")
-show_memory_usage()
-
-
-
-
-@st.cache_data(ttl=3600)
-def load_variable_data(var_name):
-    """Load data for selected variable"""
-    if var_name in ['nitrate', 'phosphate', 'ammonia']:
-        ds = load_dataset('nutrients')
-    else:
-        ds = load_dataset(var_name)
-    
-    if ds is None:
-        return None
-    
-    return get_variable_data(ds, var_name)
 
 
 col1, col2 = st.columns(2, gap="xxsmall", border=True)

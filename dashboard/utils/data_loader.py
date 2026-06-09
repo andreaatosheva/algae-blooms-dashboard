@@ -194,7 +194,7 @@ def get_variable_data(dataset: xr.Dataset, variable_name: str) -> Optional[xr.Da
         return None
     
     
-@st.cache_data
+@st.cache_resource
 def load_variable_data(var_name):
     """Load data for selected variable"""
     if var_name in ['nitrate', 'phosphate', 'ammonia']:

@@ -197,47 +197,8 @@ def create_scatter_bubble_map(data_plot, var_info, time_label):
     return fig
 
 
-
-def render_date_controls(
-    all_dates: pd.DatetimeIndex,
-    fallback_dates: pd.DatetimeIndex,
-    key_prefix: str,
-) -> pd.Timestamp:
-    """
-    Render the date-filter radio + date selectbox that appear in every tab.
-
-    Parameters
-    ----------
-    all_dates       : Full date range (2014-2024).
-    fallback_dates  : Test-set dates shown when the user picks "Test set only".
-    key_prefix      : Unique string prefix for Streamlit widget keys.
-
-    Returns
-    -------
-    The selected pd.Timestamp.
-    """
-    date_filter = st.radio(
-        "**Date Range**",
-        options=["All dates (2014-2024)", "Test set only (unseen by model)"],
-        help=(
-            "Test set dates were never seen during training — metrics on these "
-            "dates are the most reliable indicator of real model performance"
-        ),
-        key=f"{key_prefix}_date_filter",
-    )
-    selected_dates = all_dates if date_filter == "All dates (2014-2024)" else fallback_dates
-    
-    return st.selectbox(
-        "Select a date to view predictions",
-        options=selected_dates,
-        format_func=lambda x: x.strftime("%Y-%m-%d"),
-        index=0,
-        key=f"{key_prefix}_date_selectbox",
-    )
-    
-
 def render_month_year_controls(
-    all_dates: pd.DatetimeIndex,
+    available_dates: pd.DatetimeIndex,
     key_prefix: str,
 ) -> tuple[int, int]:
     """
@@ -251,7 +212,7 @@ def render_month_year_controls(
     with col_y:
         selected_year = st.selectbox(
             "Select Year",
-            options=sorted(all_dates.year.unique()),
+            options=sorted(available_dates.year.unique()),
             index=0,
             key=f"{key_prefix}_year",
         )
@@ -263,5 +224,96 @@ def render_month_year_controls(
             index=0,
             key=f"{key_prefix}_month",
         )
+
     return selected_year, selected_month
+
+
+def render_date_controls(all_dates: pd.DatetimeIndex, test_dates: pd.DatetimeIndex, key_prefix: str) -> pd.Timestamp:
+    """
+    Render the date-filter radio + date selectbox that appear in every tab.
+
+    Parameters
+    ----------
+    all_dates       : Full date range (2014-2024).
+    test_dates      : Test-set dates shown when the user picks "Test set only".
+    key_prefix      : Unique string prefix for Streamlit widget keys.
+
+    Returns
+    -------
+    The selected pd.Timestamp.
+    """
+    mode = st.radio(
+        "**Date Range**",
+        options=["All dates (2014-2024)", "Test set only (unseen by model)"],
+        help=(
+            "Test set dates were never seen during training — metrics on these "
+            "dates are the most reliable indicator of real model performance"
+        ),
+        key=f"mode_{key_prefix}",
+    )
+    
+    use_test_only = mode == "Test set only (unseen by model)"
+    
+    active_dates = pd.DatetimeIndex(sorted(set(test_dates))) if use_test_only else pd.DatetimeIndex(sorted(set(all_dates)))
+    
+    min_date = active_dates.date[0]
+    max_date = active_dates.date[-1]
+    default_date = max_date
+    
+    if use_test_only:
+        st.caption(f"📅 {len(active_dates)} test dates available between {min_date} and {max_date}")
+        available_dates = active_dates
+        
+        col_y, col_m, col_d = st.columns(3)
+        with col_y:
+            selected_year = st.selectbox(
+                "Select Year",
+                options=sorted(available_dates.year.unique()),
+                index=0,
+                key=f"{key_prefix}_year",
+            )
+        with col_m:
+            dates_year = active_dates[active_dates.year == selected_year]
+            available_months = sorted(dates_year.month.unique())
+            selected_month = st.selectbox(
+                "Select Month",
+                options=available_months,
+                format_func=lambda x: pd.Timestamp(2000, x, 1).strftime("%B"),
+                index=0,
+                key=f"{key_prefix}_month",
+            )
+        with col_d:
+            dates_in_month = active_dates[
+            (active_dates.year == selected_year) & (active_dates.month == selected_month)
+            ]
+            available_days = sorted(dates_in_month.day.unique())
+            selected_day = st.selectbox(
+                "Select Day",
+                options=available_days,
+                index=0,
+                key=f"{key_prefix}_day",
+            )
+            
+            selected_ts = all_dates[
+            (all_dates.year == selected_year) &
+            (all_dates.month == selected_month) &
+            (all_dates.day == selected_day)
+            ][0]
+            
+
+    
+    else:
+        st.caption(f"📅 {len(active_dates)} total dates available between {min_date} and {max_date}")
+        
+        selected_date = st.date_input(
+            "Select a date to view predictions",
+            value=default_date,
+            min_value=min_date,
+            max_value=max_date,
+            key=f"all_date_input_{key_prefix}",
+        )
+        
+        selected_ts = all_dates[active_dates.date == selected_date][0]
+        
+    return selected_ts
 
